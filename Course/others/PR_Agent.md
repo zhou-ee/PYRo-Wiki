@@ -198,14 +198,14 @@ print(result)
 ```md
 使用 pull_request_target 事件。这个事件能让工作流在目标仓库的安全上下文中运行，从而访问到 Secrets，但也必须小心配置以避免安全风险。
 
-### pull_request_target 的工作原理与风险
+**pull_request_target 的工作原理与风险**
 它运行在目标仓库（PeiYangRobot/pr_agent_test）的默认分支（如 main）上，所以能读取仓库的 Secrets。
 
 但是，GitHub 会自动 checkout 源分支（fork 分支）的代码，也就是说，如果恶意提交者在 PR 中修改了你的审查脚本或 workflow 文件，理论上可以窃取你的 API 密钥。
 
 所以我们必须做到：绝不 checkout 或执行任何来自 fork 分支的代码，只使用目标分支自带的脚本和配置。
 
-### ✅ 安全的 pull_request_target 配置方案
+**✅ 安全的 pull_request_target 配置方案**
 我们将修改 workflow，使其在 pull_request_target 事件触发时，只从目标仓库检出我们信任的脚本（.github/scripts/ai_review.py），然后获取 PR 的 diff 发送给 DeepSeek。完全不执行 PR 分支中的任何文件。
 ```
 
@@ -450,4 +450,4 @@ jobs:
 }
 ```
 
-注意这里的 members 要填写用户名而非昵称，path 要填写从根目录开始的完整路径
+注意这里的 members 要填写用户名而非昵称，path 要填写从根目录开始的完整路径。

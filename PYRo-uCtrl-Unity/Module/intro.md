@@ -544,7 +544,7 @@ struct fsm_active_t final : public fsm_t<owner>
 | `state_t<owner>` | `enter()` / `execute()` / `exit()`                           | 无     | 叶子状态 |
 | `fsm_t<owner>`   | `on_enter()` / `on_execute()` / `on_exit()` + `change_state()` | 有     | 组合状态 |
 
-### PASSIVE / ACTIVE 切换模式
+#### PASSIVE / ACTIVE 切换模式
 
 ```cpp
 void motor_ctrl_t::_fsm_execute()
