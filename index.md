@@ -31,5 +31,7 @@ features:
   - title: 队史馆 
     details: 点点滴滴 
  
+
 ---
 
+<RecentUpdates />

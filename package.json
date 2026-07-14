@@ -4,8 +4,9 @@
     "vitepress": "^2.0.0-alpha.16"
   },
   "scripts": {
-    "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
+    "recent-updates": "node .vitepress/scripts/recent-updates.mjs",
+    "docs:dev": "npm run recent-updates && vitepress dev",
+    "docs:build": "npm run recent-updates && vitepress build",
     "docs:preview": "vitepress preview"
   }
 }
