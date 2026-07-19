@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import { authenticateRequest, handleAuthRequest, isAuthResponse, type AuthEnv, type AuthUser } from './auth'
-import { decideRevisionWrite } from './testable'
+import { decideRevisionWrite, isRevisionConstraintError } from './testable'
 
 export interface Env extends AuthEnv {
   COLLABORATION_ROOM: DurableObjectNamespace
@@ -56,16 +56,18 @@ async function listDocuments(db: D1Database, workspace: string): Promise<JsonRec
   return result.results ?? []
 }
 
+async function revisionConflict(db: D1Database, workspace: string, documentPath: string, content: string, baseRevision: number): Promise<Response> {
+  const remote = await readDocument(db, workspace, documentPath)
+  const common = baseRevision > 0 ? await db.prepare(`SELECT content, revision, created_at as updatedAt FROM revisions WHERE document_id=? AND revision=?`).bind(idFor(workspace, documentPath), baseRevision).first<JsonRecord>() : null
+  return json({ error: 'Document changed remotely', local: { content, revision: baseRevision }, remote, common }, 409)
+}
+
 async function writeDocument(db: D1Database, workspace: string, documentPath: string, content: string, baseRevision: number, kind: 'published' | 'draft', authorId: string, message?: string): Promise<JsonRecord | Response> {
   await ensureDocument(db, workspace, documentPath)
   const current = await db.prepare('SELECT current_revision as revision FROM documents WHERE id=?').bind(idFor(workspace, documentPath)).first<{ revision: number }>()
   const revision = Number(current?.revision ?? 0)
   const decision = decideRevisionWrite(revision, baseRevision)
-  if (decision.kind === 'conflict') {
-    const remote = await readDocument(db, workspace, documentPath)
-    const common = baseRevision > 0 ? await db.prepare(`SELECT content, revision, created_at as updatedAt FROM revisions WHERE document_id=? AND revision=?`).bind(idFor(workspace, documentPath), baseRevision).first<JsonRecord>() : null
-    return json({ error: 'Document changed remotely', local: { content, revision: baseRevision }, remote, common }, 409)
-  }
+  if (decision.kind === 'conflict') return revisionConflict(db, workspace, documentPath, content, baseRevision)
   const next = decision.nextRevision!
   const documentId = idFor(workspace, documentPath)
   const revisionId = crypto.randomUUID()
@@ -212,13 +214,18 @@ export default {
       }
       if (request.method === 'GET') return json(await readDocument(env.DB, workspace, documentPath))
       if (request.method === 'PUT' || (request.method === 'POST' && isDraft)) {
+        let input: { workspace?: string; content?: string; baseRevision?: number; message?: string } | undefined
+        let selectedWorkspace = workspace
         try {
-          const input = await body<{ workspace?: string; content?: string; baseRevision?: number; message?: string }>(request)
-          const selectedWorkspace = input.workspace || workspace
+          input = await body<{ workspace?: string; content?: string; baseRevision?: number; message?: string }>(request)
+          selectedWorkspace = input.workspace || workspace
           if (typeof input.content !== 'string' || typeof input.baseRevision !== 'number') return error('content and numeric baseRevision are required')
           const result = await writeDocument(env.DB, selectedWorkspace, documentPath, input.content, input.baseRevision, isDraft ? 'draft' : 'published', authenticated.id, input.message)
           return result instanceof Response ? result : json(result)
-        } catch (cause) { return error(cause instanceof Error ? cause.message : 'Invalid request') }
+        } catch (cause) {
+          if (isRevisionConstraintError(cause)) return revisionConflict(env.DB, selectedWorkspace, documentPath, input?.content ?? '', input?.baseRevision ?? 0)
+          return error(cause instanceof Error ? cause.message : 'Invalid request')
+        }
       }
     }
     return error('Not found', 404)

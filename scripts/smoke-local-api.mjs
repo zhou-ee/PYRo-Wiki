@@ -72,6 +72,10 @@ async function main() {
     const second = await request(documentUrl, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, content: '# v2', baseRevision: 1 }) })
     assert(second.response.status === 200 && second.body.revision === 2, 'second PUT did not create revision 2')
 
+    const staleWithCommon = await request(documentUrl, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, content: '# stale from v1', baseRevision: 1 }) })
+    assert(staleWithCommon.response.status === 409, `stale PUT with common ancestor expected 409, got ${staleWithCommon.response.status}`)
+    assert(staleWithCommon.body.common?.revision === 1 && staleWithCommon.body.common?.content === '# v1', 'conflict response did not include common ancestor')
+
     const draft = await request(`/documents/${documentPath}/drafts?workspace=${workspace}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, content: '# draft', baseRevision: 2 }) })
     assert(draft.response.status === 200 && draft.body.revision === 3, 'draft did not create revision 3')
 

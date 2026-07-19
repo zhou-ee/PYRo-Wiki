@@ -14,3 +14,9 @@ export function decideRevisionWrite(currentRevision: number, baseRevision: numbe
   if (baseRevision !== currentRevision) return { kind: 'conflict' }
   return { kind: 'write', nextRevision: currentRevision + 1 }
 }
+
+
+export function isRevisionConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /unique constraint failed.*revisions/i.test(message) || /revisions.*unique constraint/i.test(message)
+}
