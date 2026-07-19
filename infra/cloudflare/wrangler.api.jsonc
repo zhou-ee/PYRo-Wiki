@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pyro-wiki-api-dev",
+  "main": "../../workers/api/src/index.ts",
+  "compatibility_date": "2026-07-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "PYRO_AUTH_MODE": "none",
+    "PYRO_ENVIRONMENT": "development"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pyro-wiki-dev",
+      "database_id": "4ff24227-07af-49ff-b038-b77e1cd2fc44",
+      "migrations_dir": "../../migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "COLLABORATION_ROOM", "class_name": "CollaborationRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CollaborationRoom"] }
+  ]
+}

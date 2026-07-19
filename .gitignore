@@ -5,3 +5,9 @@ cache
 .DS_Store
 package-lock.json
 public/recent-updates.json
+# PYRo Wiki development artifacts
+*.vsix
+*.log
+apps/vscode-extension/dist
+workers/api/dist
+.wrangler/

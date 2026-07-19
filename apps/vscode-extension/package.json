@@ -1,0 +1,214 @@
+{
+  "name": "pyro-wiki-vscode-extension",
+  "displayName": "PYRo Wiki",
+  "description": "Safe Markdown preview, slash commands, cloud sync and collaboration for PYRo Wiki.",
+  "version": "0.1.2",
+  "publisher": "pyro-wiki",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Markdown"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:pyroWiki.selectWikiRoot",
+    "onCommand:pyroWiki.openPreview",
+    "onCommand:pyroWiki.openMarkdownWorkspace",
+    "onView:pyroWiki.documents"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pyroWiki.selectWikiRoot",
+        "title": "PYRo Wiki: Select Wiki Root"
+      },
+      {
+        "command": "pyroWiki.openPreview",
+        "title": "PYRo Wiki: Open Preview"
+      },
+      {
+        "command": "pyroWiki.pullDocument",
+        "title": "PYRo Wiki: Pull Document"
+      },
+      {
+        "command": "pyroWiki.pushDocument",
+        "title": "PYRo Wiki: Push Document"
+      },
+      {
+        "command": "pyroWiki.resolveConflict",
+        "title": "PYRo Wiki: Resolve Conflict"
+      },
+      {
+        "command": "pyroWiki.joinCollaboration",
+        "title": "PYRo Wiki: Join Collaboration"
+      },
+      {
+        "command": "pyroWiki.openSourceAndPreview",
+        "title": "PYRo Wiki: Open Source + Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "pyroWiki.refreshPreview",
+        "title": "PYRo Wiki: Refresh Preview"
+      },
+      {
+        "command": "pyroWiki.pullRepository",
+        "title": "PYRo Wiki: Pull Repository",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "pyroWiki.repositoryStatus",
+        "title": "PYRo Wiki: Show Repository Status"
+      },
+      {
+        "command": "pyroWiki.openMarkdownWorkspace",
+        "title": "PYRo Wiki: Show Markdown Workspace"
+      },
+      {
+        "command": "pyroWiki.searchMarkdownDocuments",
+        "title": "PYRo Wiki: Search Markdown Documents"
+      },
+      {
+        "command": "pyroWiki.refreshDocuments",
+        "title": "PYRo Wiki: Refresh Markdown Documents"
+      }
+    ],
+    "configuration": {
+      "title": "PYRo Wiki",
+      "properties": {
+        "pyroWiki.wikiRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Wiki root relative to the workspace, or an absolute path."
+        },
+        "pyroWiki.enablePreview": {
+          "type": "boolean",
+          "default": true
+        },
+        "pyroWiki.enableSlashCommands": {
+          "type": "boolean",
+          "default": true
+        },
+        "pyroWiki.enableCloudSync": {
+          "type": "boolean",
+          "default": true
+        },
+        "pyroWiki.enableCollaboration": {
+          "type": "boolean",
+          "default": true
+        },
+        "pyroWiki.apiBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8787",
+          "description": "PYRo Wiki Worker API base URL."
+        },
+        "pyroWiki.authorCacheTtlMinutes": {
+          "type": "number",
+          "default": 60
+        },
+        "pyroWiki.lockPreviewLayout": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep Wiki source Markdown in the left editor column and PYRo preview in the right column."
+        },
+        "pyroWiki.followActiveMarkdown": {
+          "type": "boolean",
+          "default": true,
+          "description": "Update the PYRo preview when a different Wiki Markdown file becomes active."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "pyroWiki.openSourceAndPreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation@9"
+        },
+        {
+          "command": "pyroWiki.openPreview",
+          "when": "editorLangId == markdown",
+          "group": "navigation@10"
+        },
+        {
+          "command": "pyroWiki.pushDocument",
+          "when": "editorLangId == markdown",
+          "group": "navigation@11"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "pyroWiki.openMarkdownWorkspace",
+          "when": "view == pyroWiki.documents",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pyroWiki.refreshDocuments",
+          "when": "view == pyroWiki.documents",
+          "group": "navigation@2"
+        },
+        {
+          "command": "pyroWiki.searchMarkdownDocuments",
+          "when": "view == pyroWiki.documents",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "markdown.markdownItPlugins": true,
+    "views": {
+      "pyroWiki": [
+        {
+          "id": "pyroWiki.documents",
+          "name": "Markdown Documents",
+          "contextualTitle": "PYRo Wiki Markdown documents",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pyroWiki",
+          "title": "PYRo Wiki",
+          "icon": "./media/pyro-wiki.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pyroWiki.documents",
+        "contents": "PYRo Wiki Markdown workspace\n\n[Show Markdown Workspace](command:pyroWiki.openMarkdownWorkspace)  [Refresh](command:pyroWiki.refreshDocuments)"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run compile && vsce package --no-dependencies",
+    "install-local": "npm run package && code --install-extension pyro-wiki-vscode-extension-0.1.2.vsix --force"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "yjs": "^13.6.27",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/ws": "^8.5.13"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhou-ee/PYRo-Wiki.git"
+  }
+}

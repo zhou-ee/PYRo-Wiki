@@ -7,6 +7,9 @@
     "recent-updates": "node .vitepress/scripts/recent-updates.mjs",
     "docs:dev": "npm run recent-updates && vitepress dev",
     "docs:build": "npm run recent-updates && vitepress build",
-    "docs:preview": "vitepress preview"
+    "docs:preview": "vitepress preview",
+    "typecheck": "npm --prefix apps/vscode-extension run typecheck && npm --prefix workers/api run typecheck",
+    "build": "npm run docs:build && npm --prefix apps/vscode-extension run compile && npm --prefix workers/api run build",
+    "test": "npm --prefix apps/vscode-extension run test && npm --prefix workers/api run test"
   }
 }
