@@ -5,12 +5,14 @@ function assert(condition, message) {
 }
 
 async function main() {
-  const health = await fetch(`${baseUrl}/health`)
+  const noCompression = { headers: { 'accept-encoding': 'identity' } }
+  const health = await fetch(`${baseUrl}/health`, noCompression)
   assert(health.status === 200, `health expected 200, got ${health.status}`)
   const healthBody = await health.json()
   assert(healthBody.ok === true, 'health response is not ok')
   assert(healthBody.environment === 'production', `expected production environment, got ${healthBody.environment}`)
   assert(healthBody.authMode === 'feishu', `expected feishu auth mode, got ${healthBody.authMode}`)
+  assert(health.headers.get('cache-control') === 'no-store', 'health response must not be cached')
 
   const documents = await fetch(`${baseUrl}/documents?workspace=smoke-test`)
   assert(documents.status === 401, `unauthenticated documents expected 401, got ${documents.status}`)
@@ -21,8 +23,9 @@ async function main() {
   const collaboration = await fetch(`${baseUrl}/collaboration/smoke.md?workspace=smoke-test`)
   assert(collaboration.status === 401, `unauthenticated collaboration expected 401, got ${collaboration.status}`)
 
-  const oauth = await fetch(`${baseUrl}/auth/feishu/start`, { redirect: 'manual' })
+  const oauth = await fetch(`${baseUrl}/auth/feishu/start`, { ...noCompression, redirect: 'manual' })
   assert(oauth.status === 302, `oauth start expected 302, got ${oauth.status}`)
+  assert(oauth.headers.get('cache-control') === 'no-store', 'oauth redirect must not be cached')
   const location = oauth.headers.get('location')
   assert(location, 'oauth start did not include a location header')
   const authorize = new URL(location)

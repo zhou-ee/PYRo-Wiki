@@ -9,8 +9,11 @@ export interface Env extends AuthEnv {
 type JsonRecord = Record<string, unknown>
 type SocketPresence = { presenceId: string; userId: string; name: string }
 
+const MAX_REQUEST_BYTES = 2_000_000
+const MAX_COLLAB_MESSAGE_BYTES = 4_000_000
+
 function json(body: JsonRecord, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
 }
 function error(message: string, status = 400): Response { return json({ error: message }, status) }
 function now(): string { return new Date().toISOString() }
@@ -20,8 +23,10 @@ function titleFor(path: string): string { return path.split('/').pop() || path }
 
 async function body<T extends JsonRecord>(request: Request): Promise<T> {
   const length = Number(request.headers.get('content-length') ?? 0)
-  if (length > 2_000_000) throw new Error('Document exceeds the 2 MB development limit')
-  return await request.json() as T
+  if (length > MAX_REQUEST_BYTES) throw new Error('Document exceeds the 2 MB limit')
+  const raw = await request.text()
+  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) throw new Error('Document exceeds the 2 MB limit')
+  try { return JSON.parse(raw) as T } catch { throw new Error('Invalid JSON request body') }
 }
 
 async function ensureWorkspace(db: D1Database, workspace: string): Promise<void> {
@@ -102,11 +107,16 @@ export class CollaborationRoom {
 
   private handleMessage(server: WebSocket, raw: string | ArrayBuffer): void {
     try {
-      const message = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw)) as JsonRecord
+      const rawText = typeof raw === 'string' ? raw : new TextDecoder().decode(raw)
+      if (new TextEncoder().encode(rawText).byteLength > MAX_COLLAB_MESSAGE_BYTES) throw new Error('Collaboration message is too large')
+      const message = JSON.parse(rawText) as JsonRecord
       if (message.type === 'ping') {
         server.send(JSON.stringify({ type: 'pong' }))
       } else if (message.type === 'hello') {
-        if (typeof message.state === 'string') Y.applyUpdate(this.doc, fromBase64(message.state))
+        if (typeof message.state === 'string') {
+          if (message.state.length > MAX_COLLAB_MESSAGE_BYTES) throw new Error('Collaboration state is too large')
+          Y.applyUpdate(this.doc, fromBase64(message.state))
+        }
         this.persist()
         const presence = this.socketUsers.get(server)
         if (!presence) return server.send(JSON.stringify({ type: 'error', error: 'Collaboration identity unavailable' }))
@@ -115,6 +125,7 @@ export class CollaborationRoom {
         server.send(JSON.stringify(awareness))
         this.broadcast(awareness, server)
       } else if (message.type === 'update' && typeof message.update === 'string') {
+        if (message.update.length > MAX_COLLAB_MESSAGE_BYTES) throw new Error('Collaboration update is too large')
         const update = fromBase64(message.update)
         Y.applyUpdate(this.doc, update)
         this.persist()

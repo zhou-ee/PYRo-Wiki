@@ -44,6 +44,7 @@ function json(body: JsonRecord, status = 200): Response {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type, authorization',
       'access-control-allow-methods': 'GET,PUT,POST,OPTIONS'
@@ -55,14 +56,14 @@ function html(message: string, status = 200): Response {
   const safe = message.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character)
   return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>PYRo Wiki Login</title></head><body><h1>${safe}</h1><p>You can close this window and return to VS Code.</p></body></html>`, {
     status,
-    headers: { 'content-type': 'text/html; charset=utf-8' }
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
   })
 }
 
 function handoffPage(returnUrl: string, handoff: string): Response {
   const safeUrl = returnUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
   const safeCode = handoff.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character)
-  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"><title>Return to VS Code</title></head><body><h1>Returning to VS Code...</h1><p>If VS Code did not open automatically, click <a href="${safeUrl}">Return to VS Code</a>.</p><p>Fallback handoff code:</p><pre>${safeCode}</pre><p>Use <b>PYRo Wiki: Complete Feishu Login</b> in VS Code if needed.</p></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8' } })
+  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"><title>Return to VS Code</title></head><body><h1>Returning to VS Code...</h1><p>If VS Code did not open automatically, click <a href="${safeUrl}">Return to VS Code</a>.</p><p>Fallback handoff code:</p><pre>${safeCode}</pre><p>Use <b>PYRo Wiki: Complete Feishu Login</b> in VS Code if needed.</p></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
 }
 
 function nowSeconds(): number { return Math.floor(Date.now() / 1000) }
@@ -192,7 +193,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
     authorize.searchParams.set('app_id', env.FEISHU_APP_ID)
     authorize.searchParams.set('redirect_uri', callbackUrl(env))
     authorize.searchParams.set('state', state)
-    return Response.redirect(authorize.toString(), 302)
+    return new Response(null, { status: 302, headers: { location: authorize.toString(), 'cache-control': 'no-store' } })
   }
   if (url.pathname === '/auth/feishu/callback' && request.method === 'GET') {
     const state = url.searchParams.get('state')
