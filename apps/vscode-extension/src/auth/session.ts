@@ -9,6 +9,11 @@ export interface AuthUser {
   avatar?: string
 }
 
+export class AuthError extends Error {
+  readonly status = 401
+  constructor(message: string) { super(message); this.name = 'AuthError' }
+}
+
 export interface AuthProvider {
   getAccessToken(): Promise<string | undefined>
   refresh(): Promise<string | undefined>
@@ -48,7 +53,10 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
     this.refreshToken = await this.context.secrets.get(REFRESH_TOKEN_KEY)
     this.log(`refresh token present=${Boolean(this.refreshToken)}`)
     if (this.refreshToken && !this.user) {
-      try { await this.refresh() } catch { await this.clearSession(false) } }
+      try { await this.refresh() } catch { await this.clearSession(false) }
+    } else if (!this.refreshToken && this.user) {
+      await this.clearSession(false)
+    }
   }
 
   async signIn(): Promise<void> {
@@ -107,7 +115,7 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
     this.log(`refresh response=${response.status}`)
     if (!response.ok || !body.accessToken || !body.refreshToken || !body.user) {
       await this.clearSession(false)
-      throw new Error(body.error ?? `HTTP ${response.status}`)
+      throw new AuthError(body.error ?? `HTTP ${response.status}`)
     }
     await this.applySession(body.accessToken, body.refreshToken, body.expiresIn ?? 900, body.user)
     return this.accessToken

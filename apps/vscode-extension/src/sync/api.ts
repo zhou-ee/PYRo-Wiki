@@ -40,7 +40,12 @@ export class ApiClient {
   private async request<T>(path: string, init: RequestInit = {}, refreshed = false, attempt = 1): Promise<T> {
     const headers = new Headers(init.headers)
     headers.set('content-type', 'application/json')
-    const token = await this.auth?.getAccessToken()
+    let token: string | undefined
+    try { token = await this.auth?.getAccessToken() } catch (cause) {
+      const status = (cause as { status?: number }).status
+      if (status === 401) throw new ApiError('Authentication expired', 401, cause)
+      throw cause
+    }
     if (token) headers.set('authorization', `Bearer ${token}`)
     const method = (init.method ?? 'GET').toUpperCase()
     const controller = new AbortController()
@@ -60,8 +65,12 @@ export class ApiClient {
     }
     const body = await response.json().catch(() => ({})) as T & { error?: string }
     if (response.status === 401 && this.auth && !refreshed) {
-      const refreshedToken = await this.auth.refresh()
-      if (refreshedToken) return this.request<T>(path, init, true)
+      try {
+        const refreshedToken = await this.auth.refresh()
+        if (refreshedToken) return this.request<T>(path, init, true)
+      } catch (cause) {
+        throw new ApiError('Authentication expired', 401, cause)
+      }
     }
     if (isRetryableMethod(method) && (response.status === 429 || response.status >= 500) && attempt < MAX_NETWORK_ATTEMPTS) {
       const retryAfter = Number(response.headers.get('retry-after') ?? 0)
