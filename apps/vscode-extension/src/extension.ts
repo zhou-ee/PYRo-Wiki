@@ -21,7 +21,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const preview = new PreviewController(context)
   const collaboration = new CollaborationClient(auth)
   const collaborationProvider = new CollaborationProvider(collaboration)
-  const cloudDocuments = new CloudDocumentsProvider(auth)
+  const cloudDocuments = new CloudDocumentsProvider(context, auth)
   context.subscriptions.push(authOutput, auth, preview, collaboration, collaborationProvider, cloudDocuments)
 
   createRepositoryStatusItem(context)

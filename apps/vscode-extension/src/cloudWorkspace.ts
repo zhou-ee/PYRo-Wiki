@@ -7,9 +7,11 @@ import { workspaceRoot } from './workspace'
 const DEFAULT_API_BASE_URL = 'https://pyro-wiki-api.luckyy.ccwu.cc'
 
 export type CloudNode =
-  | { kind: 'document'; document: RemoteDocument }
+  | { kind: 'document'; document: RemoteDocument; syncStatus: CloudSyncStatus }
   | { kind: 'signIn' }
   | { kind: 'empty' }
+
+export type CloudSyncStatus = 'synced' | 'remote-newer' | 'local-newer' | 'not-pulled' | 'missing-local'
 
 export function workspaceIdForRoot(root: string): string {
   return path.basename(root).replace(/[^A-Za-z0-9_-]/g, '-').toLowerCase() || 'default'
@@ -19,11 +21,12 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
   private readonly emitter = new vscode.EventEmitter<CloudNode | undefined | null | void>()
   private readonly disposables: vscode.Disposable[] = [this.emitter]
   private documents: RemoteDocument[] = []
+  private syncStatuses = new Map<string, CloudSyncStatus>()
   private loading = false
 
   readonly onDidChangeTreeData = this.emitter.event
 
-  constructor(private readonly auth: AuthManager) {
+  constructor(private readonly context: vscode.ExtensionContext, private readonly auth: AuthManager) {
     this.disposables.push(auth.onDidChange(() => { this.documents = []; this.refresh() }))
   }
 
@@ -40,10 +43,10 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
       return item
     }
     const item = new vscode.TreeItem(node.document.path, vscode.TreeItemCollapsibleState.None)
-    item.description = `r${node.document.revision}`
-    item.tooltip = `${node.document.title}\nUpdated: ${node.document.updatedAt}`
+    item.description = `r${node.document.revision} ? ${this.syncLabel(node.syncStatus)}`
+    item.tooltip = `${node.document.title}\nUpdated: ${node.document.updatedAt}\nSync: ${this.syncLabel(node.syncStatus)}`
     item.contextValue = 'pyroWiki.cloudDocument'
-    item.iconPath = new vscode.ThemeIcon('cloud')
+    item.iconPath = new vscode.ThemeIcon(this.syncIcon(node.syncStatus))
     item.command = { command: 'pyroWiki.openCloudDocument', title: 'Open Cloud Document', arguments: [node.document] }
     return item
   }
@@ -52,7 +55,7 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
     if (!this.auth.signedIn) return [{ kind: 'signIn' }]
     if (this.loading) return []
     if (!this.documents.length) await this.load()
-    return this.documents.length ? this.documents.map((document) => ({ kind: 'document', document })) : [{ kind: 'empty' }]
+    return this.documents.length ? this.documents.map((document) => ({ kind: 'document', document, syncStatus: this.syncStatuses.get(document.path) ?? 'not-pulled' })) : [{ kind: 'empty' }]
   }
 
   async load(): Promise<void> {
@@ -63,8 +66,10 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
     try {
       const client = this.client(root)
       this.documents = (await client.listDocuments()).documents
+      this.syncStatuses = new Map(await Promise.all(this.documents.map(async (document) => [document.path, await this.syncStatus(root, document)] as const)))
     } catch (error) {
       this.documents = []
+      this.syncStatuses.clear()
       void vscode.window.showErrorMessage(`Could not load PYRo Wiki cloud documents: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       this.loading = false
@@ -119,6 +124,24 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
   }
 
   refresh(): void { this.emitter.fire() }
+
+  private async syncStatus(root: string, document: RemoteDocument): Promise<CloudSyncStatus> {
+    const localUri = vscode.Uri.file(path.join(root, document.path))
+    try { await vscode.workspace.fs.stat(localUri) } catch { return 'missing-local' }
+    const revisionKey = `pyroWiki.revision.${localUri.toString()}`
+    const localRevision = this.context.workspaceState.get<number | undefined>(revisionKey)
+    if (localRevision === undefined) return 'not-pulled'
+    if (localRevision === document.revision) return 'synced'
+    return localRevision < document.revision ? 'remote-newer' : 'local-newer'
+  }
+
+  private syncLabel(status: CloudSyncStatus): string {
+    return { synced: 'synced', 'remote-newer': 'remote newer', 'local-newer': 'local newer', 'not-pulled': 'not pulled', 'missing-local': 'local missing' }[status]
+  }
+
+  private syncIcon(status: CloudSyncStatus): string {
+    return { synced: 'cloud', 'remote-newer': 'cloud-download', 'local-newer': 'cloud-upload', 'not-pulled': 'cloud', 'missing-local': 'file' }[status]
+  }
 
   private client(root: string): ApiClient {
     const baseUrl = vscode.workspace.getConfiguration('pyroWiki').get<string>('apiBaseUrl', DEFAULT_API_BASE_URL)
