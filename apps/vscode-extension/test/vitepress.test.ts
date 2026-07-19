@@ -24,8 +24,12 @@ describe('full VitePress preview server', () => {
       const response = await get(url)
       expect(response.status).toBe(200)
       expect(response.body).toContain('parentWindow.postMessage')
+      expect(response.body).toContain('window.scrollTo')
+      expect(response.body).toContain('pageKey')
       expect(response.body).not.toContain('Unsupported component')
-      expect(server.document(url, 'vscode-webview://test')).toContain('vitepress-frame')
+      const shell = server.document(url, 'vscode-webview://test')
+      expect(shell).toContain('vitepress-frame')
+      expect(shell).toContain('pendingSourceScroll')
     } finally {
       await server.disposeAsync()
     }

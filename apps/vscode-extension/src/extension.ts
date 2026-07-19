@@ -4,7 +4,7 @@ import * as vscode from 'vscode'
 import { PyroCompletionProvider } from './completion'
 import { loadMembers } from './preview/data'
 import { PreviewController } from './preview/controller'
-import { selectWikiRoot } from './workspace'
+import { configuredWikiRoot, selectWikiRoot } from './workspace'
 import { pullCurrent, pushCurrent } from './sync/commands'
 import { CollaborationClient } from './collaboration/client'
 import { extendMarkdownIt as extendNativeMarkdownIt } from './preview/native'
@@ -24,7 +24,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const members = async (): Promise<Record<string, import('./preview/parser').Member>> => {
     const document = vscode.window.activeTextEditor?.document
-    cachedMembers = document ? await loadMembers(vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath, context) : context.globalState.get('pyroWiki.membersCache', {})
+    cachedMembers = document ? await loadMembers(configuredWikiRoot(document), context) : context.globalState.get('pyroWiki.membersCache', {})
     return cachedMembers
   }
   const getMembers = () => cachedMembers

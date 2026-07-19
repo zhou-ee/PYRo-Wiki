@@ -12,7 +12,7 @@ The `PYRo Wiki: Open Preview` command starts the VitePress development server fr
 - VitePress Markdown compiler
 - static assets and route resolution
 
-VitePress must be installed in the Wiki workspace, normally through the root `package.json`.
+VitePress must be installed in the Wiki workspace, normally through the root `package.json`. The preview saves dirty Markdown files before reloading by default (`pyroWiki.syncUnsavedPreview`) so the VitePress server cannot render an older on-disk copy.
 
 ## Development
 

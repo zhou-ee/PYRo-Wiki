@@ -119,6 +119,11 @@
           "type": "boolean",
           "default": true,
           "description": "Update the PYRo preview when a different Wiki Markdown file becomes active."
+        },
+        "pyroWiki.syncUnsavedPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save dirty Markdown documents before reloading the full VitePress preview so source and preview cannot diverge."
         }
       }
     },

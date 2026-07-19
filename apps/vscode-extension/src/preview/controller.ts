@@ -1,6 +1,12 @@
-import * as vscode from 'vscode'
+﻿import * as vscode from 'vscode'
 import { VitePressPreviewServer } from './vitepress'
-import { isWikiDocument, workspaceRoot } from '../workspace'
+import { configuredWikiRoot, isWikiDocument } from '../workspace'
+
+interface PreviewMessage {
+  type?: string
+  ratio?: number
+  pageKey?: string
+}
 
 export class PreviewController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined
@@ -9,6 +15,10 @@ export class PreviewController implements vscode.Disposable {
   private sourceEditor: vscode.TextEditor | undefined
   private movingSource = false
   private suppressSourceScroll = false
+  private suppressSourceScrollTimer: NodeJS.Timeout | undefined
+  private pendingRenderTimer: NodeJS.Timeout | undefined
+  private renderGeneration = 0
+  private renderQueue: Promise<void> = Promise.resolve()
   private readonly vitePress = new VitePressPreviewServer()
   private webviewInitialized = false
   private currentPreviewUrl: string | undefined
@@ -16,7 +26,7 @@ export class PreviewController implements vscode.Disposable {
   constructor(private readonly context: vscode.ExtensionContext) {
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument((event) => {
-        if (this.panel && this.currentDocument?.uri.toString() === event.document.uri.toString()) void this.render(event.document, true)
+        if (this.panel && this.currentDocument?.uri.toString() === event.document.uri.toString()) this.scheduleDocumentRender(event.document)
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (this.panel && editor?.document) void this.followEditor(editor)
@@ -25,7 +35,7 @@ export class PreviewController implements vscode.Disposable {
         if (this.panel && this.currentDocument && event.textEditor.document.uri.toString() === this.currentDocument.uri.toString()) this.sendSourceScroll(event.textEditor)
       }),
       vscode.window.onDidChangeActiveColorTheme(() => {
-        if (this.panel && this.currentDocument) void this.render(this.currentDocument, true)
+        if (this.panel && this.currentDocument) void this.queueRender(this.currentDocument, true)
       })
     )
   }
@@ -36,6 +46,10 @@ export class PreviewController implements vscode.Disposable {
 
   private get followActiveMarkdown(): boolean {
     return vscode.workspace.getConfiguration('pyroWiki').get<boolean>('followActiveMarkdown', true)
+  }
+
+  private get syncUnsavedPreview(): boolean {
+    return vscode.workspace.getConfiguration('pyroWiki').get<boolean>('syncUnsavedPreview', true)
   }
 
   private async showSourceLeft(document: vscode.TextDocument, preserveFocus: boolean): Promise<vscode.TextEditor> {
@@ -63,16 +77,38 @@ export class PreviewController implements vscode.Disposable {
     this.sourceEditor = keep
   }
 
+  private scheduleDocumentRender(document: vscode.TextDocument): void {
+    if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
+    this.pendingRenderTimer = setTimeout(() => {
+      this.pendingRenderTimer = undefined
+      void this.queueRender(document, true)
+    }, 180)
+  }
+
+  private queueRender(document: vscode.TextDocument, reload = false): Promise<void> {
+    if (this.pendingRenderTimer) {
+      clearTimeout(this.pendingRenderTimer)
+      this.pendingRenderTimer = undefined
+    }
+    const generation = ++this.renderGeneration
+    const task = this.renderQueue.then(async () => {
+      if (generation !== this.renderGeneration || !this.panel) return
+      await this.render(document, reload, generation)
+    })
+    this.renderQueue = task.catch(() => undefined)
+    return task
+  }
+
   private async setDocument(document: vscode.TextDocument, editor?: vscode.TextEditor): Promise<void> {
     this.currentDocument = document
     this.sourceEditor = editor ?? this.sourceEditor
-    await this.render(document)
+    await this.queueRender(document)
     if (this.sourceEditor) this.sendSourceScroll(this.sourceEditor)
   }
 
   private async followEditor(editor: vscode.TextEditor): Promise<void> {
     if (!this.panel || !this.followActiveMarkdown || !isWikiDocument(editor.document)) {
-      if (this.panel && editor?.document) void this.render(editor.document)
+      if (this.panel && editor?.document) void this.queueRender(editor.document)
       return
     }
     let sourceEditor = editor
@@ -87,6 +123,16 @@ export class PreviewController implements vscode.Disposable {
     await this.setDocument(sourceEditor.document, sourceEditor)
   }
 
+  private currentPageKey(): string | undefined {
+    if (!this.currentPreviewUrl) return undefined
+    try { return new URL(this.currentPreviewUrl).pathname } catch { return undefined }
+  }
+
+  private isCurrentPage(message: PreviewMessage): boolean {
+    const currentPage = this.currentPageKey()
+    return !message.pageKey || !currentPage || message.pageKey === currentPage
+  }
+
   private sendSourceScroll(editor: vscode.TextEditor): void {
     if (!this.panel || this.suppressSourceScroll || !this.currentDocument || editor.document.uri.toString() !== this.currentDocument.uri.toString()) return
     const visible = editor.visibleRanges[0]
@@ -96,25 +142,36 @@ export class PreviewController implements vscode.Disposable {
     const visibleLines = Math.max(1, endLineExclusive - startLine)
     const maxStart = Math.max(0, lineCount - visibleLines)
     const ratio = maxStart === 0 ? 0 : Math.max(0, Math.min(1, startLine / maxStart))
-    void this.panel.webview.postMessage({ type: 'sourceScroll', ratio })
+    void this.panel.webview.postMessage({
+      type: 'sourceScroll',
+      ratio,
+      sourceLine: startLine,
+      sourceLineCount: lineCount,
+      sourceVisibleLines: visibleLines
+    })
   }
 
-  private async handleWebviewMessage(message: { type?: string; ratio?: number }): Promise<void> {
+  private async handleWebviewMessage(message: PreviewMessage): Promise<void> {
     if (message.type === 'previewReady') {
-      if (this.sourceEditor) this.sendSourceScroll(this.sourceEditor)
+      if (this.isCurrentPage(message) && this.sourceEditor) this.sendSourceScroll(this.sourceEditor)
       return
     }
-    if (message.type !== 'previewScroll' || typeof message.ratio !== 'number' || !this.sourceEditor || !this.currentDocument) return
+    if (message.type !== 'previewScroll' || typeof message.ratio !== 'number' || !this.isCurrentPage(message) || !this.sourceEditor || !this.currentDocument) return
     const editor = this.sourceEditor
     const visible = editor.visibleRanges[0]
     const visibleLines = Math.max(1, visible ? visible.end.line - visible.start.line + 1 : 1)
     const maxStart = Math.max(0, editor.document.lineCount - visibleLines)
-    const targetLine = Math.round(Math.max(0, Math.min(1, message.ratio)) * maxStart)
+    const ratio = Math.max(0, Math.min(1, message.ratio))
+    const targetLine = ratio >= 0.999 ? maxStart : Math.round(ratio * maxStart)
     this.suppressSourceScroll = true
+    if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
     try {
       editor.revealRange(new vscode.Range(targetLine, 0, targetLine, 0), vscode.TextEditorRevealType.AtTop)
     } finally {
-      setTimeout(() => { this.suppressSourceScroll = false }, 400)
+      this.suppressSourceScrollTimer = setTimeout(() => {
+        this.suppressSourceScroll = false
+        this.suppressSourceScrollTimer = undefined
+      }, 450)
     }
   }
 
@@ -133,6 +190,8 @@ export class PreviewController implements vscode.Disposable {
         this.sourceEditor = undefined
         this.currentPreviewUrl = undefined
         this.webviewInitialized = false
+        if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
+        if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
         void this.vitePress.disposeAsync()
       }, null, this.disposables)
     }
@@ -141,18 +200,25 @@ export class PreviewController implements vscode.Disposable {
   }
 
   async refresh(): Promise<void> {
-    if (this.currentDocument) await this.setDocument(this.currentDocument)
+    if (this.currentDocument) await this.queueRender(this.currentDocument, true)
   }
 
-  private async render(document: vscode.TextDocument, reload = false): Promise<void> {
+  private async render(document: vscode.TextDocument, reload: boolean, generation: number): Promise<void> {
     if (!this.panel || !isWikiDocument(document)) {
       if (this.panel) this.panel.webview.html = '<!doctype html><html><body><p>PYRo Wiki preview is disabled for this file.</p></body></html>'
       return
     }
-    const root = workspaceRoot(document)
+    const root = configuredWikiRoot(document)
     if (!root) return
     try {
+      if (this.syncUnsavedPreview && document.isDirty) {
+        const saved = await document.save()
+        if (!saved) throw new Error('The Markdown file could not be saved before preview synchronization.')
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      }
+      if (generation !== this.renderGeneration || !this.panel) return
       await this.vitePress.start(root)
+      if (generation !== this.renderGeneration || !this.panel) return
       const url = this.vitePress.urlFor(document)
       this.currentDocument = document
       this.panel.title = `PYRo Wiki: ${document.fileName.split(/[\\/]/).pop() ?? 'Preview'}`
@@ -161,11 +227,12 @@ export class PreviewController implements vscode.Disposable {
         this.webviewInitialized = true
       } else {
         if (url !== this.currentPreviewUrl) await this.panel.webview.postMessage({ type: 'navigatePreview', url })
-        else if (reload) await this.panel.webview.postMessage({ type: 'navigatePreview', url: `${url}?pyroWikiReload=${Date.now()}` })
+        else if (reload) await this.panel.webview.postMessage({ type: 'navigatePreview', url: `${url}?pyroWikiReload=${document.version}-${Date.now()}` })
       }
       this.currentPreviewUrl = url
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (!this.panel) return
       this.panel.webview.html = `<!doctype html><html><body><h2>VitePress preview failed</h2><pre>${escapeHtml(message)}</pre></body></html>`
       this.webviewInitialized = false
       void vscode.window.showErrorMessage(`PYRo Wiki VitePress preview failed: ${message}`)
@@ -174,6 +241,8 @@ export class PreviewController implements vscode.Disposable {
 
   dispose(): void {
     this.panel?.dispose()
+    if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
+    if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
     this.vitePress.dispose()
     for (const disposable of this.disposables) disposable.dispose()
   }
