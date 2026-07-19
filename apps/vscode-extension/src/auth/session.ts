@@ -66,6 +66,7 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
 
   async handleUri(uri: vscode.Uri): Promise<void> {
     this.log(`received URI authority=${uri.authority} path=${uri.path} queryKeys=${[...new URLSearchParams(uri.query).keys()].join(',')}`)
+    if (uri.authority !== 'pyro-wiki.pyro-wiki-vscode-extension') { this.log('ignored URI because callback authority did not match'); return }
     if (uri.path !== '/auth/callback' && !uri.path.endsWith('/auth/callback')) { this.log('ignored URI because callback path did not match'); return }
     const handoff = new URLSearchParams(uri.query).get('handoff')
     if (!handoff) { this.log('callback URI did not include handoff'); void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
@@ -73,12 +74,14 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
   }
 
   async completeHandoff(handoff: string): Promise<void> {
-    if (!handoff.trim()) { void vscode.window.showErrorMessage('PYRo Wiki handoff code cannot be empty.'); return }
+    const normalizedHandoff = handoff.trim()
+    if (!normalizedHandoff) { void vscode.window.showErrorMessage('PYRo Wiki handoff code cannot be empty.'); return }
+    if (normalizedHandoff.length > 512) { void vscode.window.showErrorMessage('PYRo Wiki handoff code is invalid.'); return }
     try {
       const response = await fetch(`${this.apiBaseUrl()}/auth/session/exchange`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handoff: handoff.trim() })
+        body: JSON.stringify({ handoff: normalizedHandoff })
       })
       this.log(`session exchange response=${response.status}`)
       const body = await response.json() as { accessToken?: string; refreshToken?: string; expiresIn?: number; user?: AuthUser; error?: string }

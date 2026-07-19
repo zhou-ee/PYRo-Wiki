@@ -15,6 +15,9 @@ async function main() {
   const documents = await fetch(`${baseUrl}/documents?workspace=smoke-test`)
   assert(documents.status === 401, `unauthenticated documents expected 401, got ${documents.status}`)
 
+  const malformedAuth = await fetch(`${baseUrl}/documents?workspace=smoke-test`, { headers: { authorization: 'Bearer malformed.token.%' } })
+  assert(malformedAuth.status === 401, `malformed bearer token expected 401, got ${malformedAuth.status}`)
+
   const collaboration = await fetch(`${baseUrl}/collaboration/smoke.md?workspace=smoke-test`)
   assert(collaboration.status === 401, `unauthenticated collaboration expected 401, got ${collaboration.status}`)
 

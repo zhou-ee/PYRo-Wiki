@@ -103,14 +103,20 @@ async function signAccessToken(env: AuthEnv, claims: AccessClaims): Promise<stri
 async function verifyAccessToken(env: AuthEnv, token: string): Promise<AccessClaims | undefined> {
   if (!env.AUTH_SESSION_SECRET) return undefined
   const parts = token.split('.')
-  if (parts.length !== 3) return undefined
-  const input = `${parts[0]}.${parts[1]}`
-  const expected = await hmac(env.AUTH_SESSION_SECRET, input)
-  const actual = decodeBase64Url(parts[2])
-  if (expected.length !== actual.length || expected.some((byte, index) => byte !== actual[index])) return undefined
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return undefined
   try {
-    const claims = JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[1]))) as AccessClaims
-    return claims.exp > nowSeconds() && typeof claims.sub === 'string' && typeof claims.sid === 'string' ? claims : undefined
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.AUTH_SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+    const signature = decodeBase64Url(parts[2])
+    const signatureBuffer = new ArrayBuffer(signature.byteLength)
+    new Uint8Array(signatureBuffer).set(signature)
+    const valid = await crypto.subtle.verify('HMAC', key, signatureBuffer, new TextEncoder().encode(`${parts[0]}.${parts[1]}`))
+    if (!valid) return undefined
+    const claims = JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[1]))) as Partial<AccessClaims>
+    const now = nowSeconds()
+    const issuedAt = claims.iat
+    const expiresAt = claims.exp
+    if (typeof claims.sub !== 'string' || typeof claims.sid !== 'string' || typeof claims.name !== 'string' || typeof issuedAt !== 'number' || typeof expiresAt !== 'number' || !Number.isInteger(issuedAt) || !Number.isInteger(expiresAt)) return undefined
+    return issuedAt <= now + 60 && expiresAt > now ? claims as AccessClaims : undefined
   } catch {
     return undefined
   }
@@ -120,7 +126,8 @@ function authMode(env: AuthEnv): 'none' | 'feishu' { return env.PYRO_AUTH_MODE =
 function callbackUrl(env: AuthEnv): string { return env.PYRO_AUTH_CALLBACK_URL || 'https://pyro-wiki-api.luckyy.ccwu.cc/auth/feishu/callback' }
 function bearer(request: Request): string | undefined {
   const value = request.headers.get('authorization')
-  return value?.startsWith('Bearer ') ? value.slice('Bearer '.length).trim() : undefined
+  const match = value?.match(/^Bearer\s+(.+)$/i)
+  return match?.[1].trim() || undefined
 }
 
 async function getUser(env: AuthEnv, userId: string): Promise<AuthUser | undefined> {
@@ -192,9 +199,9 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
     const code = url.searchParams.get('code')
     if (!state || !code) return html('Feishu authorization was cancelled or returned no code.', 400)
     const stateHash = await sha256(state)
-    const stateRow = await env.DB.prepare('SELECT state_hash as stateHash, expires_at as expiresAt FROM oauth_states WHERE state_hash=?').bind(stateHash).first<{ stateHash: string; expiresAt: string }>()
+    const stateRow = await env.DB.prepare('SELECT state_hash as stateHash, redirect_uri as redirectUri, expires_at as expiresAt FROM oauth_states WHERE state_hash=?').bind(stateHash).first<{ stateHash: string; redirectUri: string; expiresAt: string }>()
     await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash=?').bind(stateHash).run()
-    if (!stateRow || isExpired(stateRow.expiresAt)) return html('The Feishu login request expired. Please start again from VS Code.', 400)
+    if (!stateRow || stateRow.redirectUri !== callbackUrl(env) || isExpired(stateRow.expiresAt)) return html('The Feishu login request expired. Please start again from VS Code.', 400)
     try {
       const identity = await exchangeFeishuCode(env, code)
       const existing = await env.DB.prepare('SELECT id FROM users WHERE feishu_open_id=?').bind(identity.openId).first<{ id: string }>()
