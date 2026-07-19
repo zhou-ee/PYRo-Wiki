@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import MarkdownIt from 'markdown-it'
 import { installPyroWikiMarkdownIt, parseStaticMembers, previewDocument, renderMarkdown } from '../src/preview/parser'
 
@@ -17,7 +19,7 @@ describe('safe preview parser', () => {
 
   it('accepts VitePress spacing and renders the exact Wiki component syntax', () => {
     const members = parseStaticMembers(membersSource)
-    const html = renderMarkdown(`Version<Badge type =\"tip\" text=\"1.0.0\"/>\nFile<Badge type = \"info\" text=\"pyro_mutex.h\"/><Badge type = \"info\" text=\"pyro_mutex.cpp\"/>\n\n<script setup>\nimport { mem1 } from '../../../public/member_list/members'\n</script>\n<VPTeamMembers size=\"small\" :members=\"[mem1]\" />`, { members })
+    const html = renderMarkdown(`Version<Badge type ="tip" text="1.0.0"/>\nFile<Badge type = "info" text="pyro_mutex.h"/><Badge type = "info" text="pyro_mutex.cpp"/>\n\n<script setup>\nimport { mem1 } from '../../../public/member_list/members'\n</script>\n<VPTeamMembers size="small" :members="[mem1]" />`, { members })
     expect(html).toContain('pyro_mutex.h')
     expect(html).toContain('pyro_mutex.cpp')
     expect(html).toContain('Lucky')
@@ -41,9 +43,34 @@ describe('safe preview parser', () => {
     expect(html).not.toContain('Lucky')
   })
 
-  it('does not render components inside fenced code or execute setup content', () => {
-    const html = renderMarkdown(`<script setup>throw new Error('must not execute')</script>\n\n\`\`\`vue\n<Badge type="tip" text="not-rendered"/>\n<AuthorCard author="not-rendered"/>\n\`\`\``)
+  it('strips VitePress frontmatter and renders nested team-page slots', () => {
+    const members = parseStaticMembers(membersSource)
+    const html = renderMarkdown(`---\ntoc: true\nlayout: page\n---\n\n<VPTeamPage>\n  <VPTeamPageTitle>\n    <template #title>北洋机甲管理人员</template>\n  </VPTeamPageTitle>\n  <VPTeamPageSection>\n    <template #title>现役队员</template>\n    <template #lead>本赛季在队的主力队员</template>\n    <template #members>\n      <VPTeamMembers size="small" :members="[mem1, mem2]" />\n    </template>\n  </VPTeamPageSection>\n</VPTeamPage>`, { members })
+    expect(html).toContain('北洋机甲管理人员')
+    expect(html).toContain('现役队员')
+    expect(html).toContain('本赛季在队的主力队员')
+    expect(html).toContain('Lucky')
+    expect(html).toContain('MekCraftLi')
+    expect(html).not.toContain('toc: true')
+    expect(html).not.toContain('layout: page')
+    expect(html).not.toContain('&lt;template')
+  })
+
+  it('renders the checked-in administrator page without leaking frontmatter or Vue tags', () => {
+    const membersSource = readFileSync(resolve(__dirname, '../../../public/member_list/members.ts'), 'utf8')
+    const document = readFileSync(resolve(__dirname, '../../../about_us/administrator_list.md'), 'utf8')
+    const html = renderMarkdown(document, { members: parseStaticMembers(membersSource) })
+    expect(html).not.toContain('layout: page')
+    expect(html).not.toContain('&lt;VPTeamPage')
+    expect(html).not.toContain('&lt;template')
+    expect(html).toContain('pyro-team-page')
+    expect(html).toContain('pyro-team-members')
+  })
+
+  it('does not render components inside fenced or inline code', () => {
+    const html = renderMarkdown(`<script setup>throw new Error('must not execute')</script>\n\n\`<Badge type="tip" text="inline"/>\`\n\n\`\`\`vue\n<Badge type="tip" text="not-rendered"/>\n<AuthorCard author="not-rendered"/>\n\`\`\``)
     expect(html).toContain('&lt;Badge')
+    expect(html).toContain('inline')
     expect(html).toContain('not-rendered')
     expect(html).not.toContain('pyro-badge')
   })
