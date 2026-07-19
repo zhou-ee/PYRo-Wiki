@@ -29,7 +29,9 @@
     "onUri",
     "onCommand:pyroWiki.viewCloudRevisions",
     "onCommand:pyroWiki.compareCloudDocument",
-    "onCommand:pyroWiki.completeFeishuLogin"
+    "onCommand:pyroWiki.completeFeishuLogin",
+    "onCommand:pyroWiki.saveDraft",
+    "onCommand:pyroWiki.viewRevisions"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -133,6 +135,16 @@
         "command": "pyroWiki.completeFeishuLogin",
         "title": "PYRo Wiki: Complete Feishu Login",
         "icon": "$(key)"
+      },
+      {
+        "command": "pyroWiki.saveDraft",
+        "title": "PYRo Wiki: Save Cloud Draft",
+        "icon": "$(save-as)"
+      },
+      {
+        "command": "pyroWiki.viewRevisions",
+        "title": "PYRo Wiki: View Current Revisions",
+        "icon": "$(history)"
       }
     ],
     "configuration": {
@@ -201,6 +213,21 @@
           "command": "pyroWiki.pushDocument",
           "when": "editorLangId == markdown",
           "group": "navigation@11"
+        },
+        {
+          "command": "pyroWiki.pullDocument",
+          "when": "editorLangId == markdown",
+          "group": "navigation@12"
+        },
+        {
+          "command": "pyroWiki.saveDraft",
+          "when": "editorLangId == markdown",
+          "group": "navigation@13"
+        },
+        {
+          "command": "pyroWiki.viewRevisions",
+          "when": "editorLangId == markdown",
+          "group": "navigation@14"
         }
       ],
       "view/title": [

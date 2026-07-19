@@ -58,3 +58,38 @@ export async function pullCurrent(context: vscode.ExtensionContext, auth: AuthMa
     else void vscode.window.showErrorMessage(`PYRo Wiki pull failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
+
+export async function saveDraftCurrent(context: vscode.ExtensionContext, auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('Current document is outside the PYRo Wiki root.')
+  const client = makeClient(document, auth)
+  if (!client) return
+  const key = `pyroWiki.revision.${document.uri.toString()}`
+  const baseRevision = context.workspaceState.get<number>(key, 0)
+  try {
+    const result = await client.saveDraft(documentPath(document), document.getText(), baseRevision)
+    await context.workspaceState.update(key, result.revision)
+    void vscode.window.showInformationMessage(`Saved cloud draft revision ${result.revision}.`)
+  } catch (error) {
+    void vscode.window.showErrorMessage(`PYRo Wiki draft save failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+export async function viewCurrentRevisions(auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('Current document is outside the PYRo Wiki root.')
+  const client = makeClient(document, auth)
+  if (!client) return
+  try {
+    const revisions = (await client.revisions(documentPath(document))).revisions
+    if (!revisions.length) return void vscode.window.showInformationMessage('This document has no cloud revisions yet.')
+    const picked = await vscode.window.showQuickPick(revisions.map((revision) => ({
+      label: `Revision ${revision.revision}`,
+      description: revision.updatedAt,
+      revision
+    })), { placeHolder: `Select a cloud revision of ${document.fileName}` })
+    if (!picked) return
+    const remote = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
+    await vscode.commands.executeCommand('vscode.diff', document.uri, remote.uri, `PYRo: ${document.fileName} revision ${picked.revision.revision}`)
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not load cloud revisions: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}

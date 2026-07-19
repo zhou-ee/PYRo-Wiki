@@ -5,7 +5,7 @@ import { PyroCompletionProvider } from './completion'
 import { loadMembers } from './preview/data'
 import { PreviewController } from './preview/controller'
 import { configuredWikiRoot, selectWikiRoot } from './workspace'
-import { pullCurrent, pushCurrent } from './sync/commands'
+import { pullCurrent, pushCurrent, saveDraftCurrent, viewCurrentRevisions } from './sync/commands'
 import { CollaborationClient } from './collaboration/client'
 import { CollaborationProvider } from './collaboration/workspace'
 import { extendMarkdownIt as extendNativeMarkdownIt } from './preview/native'
@@ -72,6 +72,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.compareCloudDocument', (document) => cloudDocuments.compareWithLocal(document)),
     vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.saveDraft', () => saveDraftCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.viewRevisions', () => viewCurrentRevisions(auth)),
     vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pullCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.joinCollaboration', () => collaboration.join()),
     vscode.commands.registerCommand('pyroWiki.leaveCollaboration', () => collaboration.leave()),
