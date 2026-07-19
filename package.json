@@ -13,6 +13,7 @@
     "test": "npm --prefix apps/vscode-extension run test && npm --prefix workers/api run test",
     "smoke:production": "node scripts/smoke-production.mjs",
     "smoke:local-api": "node scripts/smoke-local-api.mjs",
-    "smoke:local-collaboration": "node scripts/smoke-local-collaboration.mjs"
+    "smoke:local-collaboration": "node scripts/smoke-local-collaboration.mjs",
+    "smoke:local-auth": "node scripts/smoke-local-auth.mjs"
   }
 }

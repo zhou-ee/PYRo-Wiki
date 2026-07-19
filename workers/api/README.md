@@ -46,3 +46,11 @@ npm run smoke:local-collaboration
 ```
 
 This opens two local WebSocket clients and verifies initial Yjs sync, incremental updates, connection-scoped Presence, and offline Presence events.
+
+The local session lifecycle can be checked with:
+
+```powershell
+npm run smoke:local-auth
+```
+
+It uses only fake local credentials and verifies one-time handoff exchange, `/me`, refresh-token rotation, logout, and session revocation.
