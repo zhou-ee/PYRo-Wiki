@@ -24,7 +24,7 @@ After authorization, the Worker returns a one-time handoff code to the VS Code U
 
 ## Cloud documents and collaboration
 
-The PYRo Wiki activity bar includes: local Markdown documents, Cloud Documents, and Collaboration. Cloud Documents loads remote D1-backed revisions after login and shows whether each file is synced, remote-newer, local-newer, not pulled, or missing locally. Use `Pull`, `Push`, `Save Cloud Draft`, `View Cloud Revisions`, and `Compare Cloud Document` from the editor or Cloud Documents view. Collaboration connects the current Wiki Markdown document to the authenticated Durable Object/Yjs room, sends live Yjs updates, keeps editing locally during disconnects, and retries with exponential backoff. If a Push is interrupted by a network failure, use `PYRo Wiki: Retry Sync Queue` after connectivity returns.
+The PYRo Wiki activity bar includes: local Markdown documents, Cloud Documents, and Collaboration. Cloud Documents loads remote D1-backed revisions after login and shows whether each file is synced, remote-newer, local-newer, not pulled, or missing locally. Use `Search Cloud Documents`, `Pull`, `Push`, `Save Cloud Draft`, `View Cloud Revisions`, and `Compare Cloud Document` from the editor or Cloud Documents view. Collaboration connects the current Wiki Markdown document to the authenticated Durable Object/Yjs room, sends live Yjs updates, keeps editing locally during disconnects, and retries with exponential backoff. If a Push is interrupted by a network failure, use `PYRo Wiki: Retry Sync Queue` after connectivity returns.
 
 ## Development
 

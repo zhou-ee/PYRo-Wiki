@@ -34,7 +34,8 @@
     "onCommand:pyroWiki.viewRevisions",
     "onCommand:pyroWiki.retrySyncQueue",
     "onCommand:pyroWiki.pullCloudDocument",
-    "onCommand:pyroWiki.pushCloudDocument"
+    "onCommand:pyroWiki.pushCloudDocument",
+    "onCommand:pyroWiki.searchCloudDocuments"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -163,6 +164,11 @@
         "command": "pyroWiki.pushCloudDocument",
         "title": "PYRo Wiki: Push Cloud Document",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "pyroWiki.searchCloudDocuments",
+        "title": "PYRo Wiki: Search Cloud Documents",
+        "icon": "$(search)"
       }
     ],
     "configuration": {
@@ -293,6 +299,11 @@
           "command": "pyroWiki.leaveCollaboration",
           "when": "view == pyroWiki.collaboration",
           "group": "navigation@2"
+        },
+        {
+          "command": "pyroWiki.searchCloudDocuments",
+          "when": "view == pyroWiki.cloudDocuments",
+          "group": "navigation@4"
         }
       ],
       "view/item": [

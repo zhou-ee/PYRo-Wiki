@@ -22,6 +22,7 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
   private readonly disposables: vscode.Disposable[] = [this.emitter]
   private documents: RemoteDocument[] = []
   private syncStatuses = new Map<string, CloudSyncStatus>()
+  private searchQuery = ''
   private loading = false
 
   readonly onDidChangeTreeData = this.emitter.event
@@ -38,7 +39,7 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
       return item
     }
     if (node.kind === 'empty') {
-      const item = new vscode.TreeItem('No remote documents', vscode.TreeItemCollapsibleState.None)
+      const item = new vscode.TreeItem(this.searchQuery ? `No documents match '${this.searchQuery}'` : 'No remote documents', vscode.TreeItemCollapsibleState.None)
       item.iconPath = new vscode.ThemeIcon('info')
       return item
     }
@@ -55,7 +56,17 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
     if (!this.auth.signedIn) return [{ kind: 'signIn' }]
     if (this.loading) return []
     if (!this.documents.length) await this.load()
-    return this.documents.length ? this.documents.map((document) => ({ kind: 'document', document, syncStatus: this.syncStatuses.get(document.path) ?? 'not-pulled' })) : [{ kind: 'empty' }]
+    const query = this.searchQuery.toLocaleLowerCase()
+    const documents = query ? this.documents.filter((document) => `${document.path} ${document.title}`.toLocaleLowerCase().includes(query)) : this.documents
+    return documents.length ? documents.map((document) => ({ kind: 'document', document, syncStatus: this.syncStatuses.get(document.path) ?? 'not-pulled' })) : [{ kind: 'empty' }]
+  }
+
+  async search(): Promise<void> {
+    if (!this.auth.signedIn) return void vscode.window.showWarningMessage('Sign in with Feishu before searching cloud documents.')
+    const query = await vscode.window.showInputBox({ value: this.searchQuery, prompt: 'Filter cloud documents by path or title', placeHolder: 'e.g. Course/embedded' })
+    if (query === undefined) return
+    this.searchQuery = query.trim()
+    this.refresh()
   }
 
   async load(): Promise<void> {
