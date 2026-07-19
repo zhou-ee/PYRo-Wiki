@@ -13,6 +13,7 @@ import { createRepositoryStatusItem, pullRepository, showRepositoryStatus } from
 import { WikiDocumentsProvider, searchMarkdownDocuments } from './markdownWorkspace'
 import { AuthManager } from './auth/session'
 import { CloudDocumentsProvider } from './cloudWorkspace'
+import { pendingSyncCount } from './sync/queue'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const authOutput = vscode.window.createOutputChannel('PYRo Wiki Auth')
@@ -34,7 +35,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     authStatus.show()
   }
   updateAuthStatus()
-  context.subscriptions.push(authStatus, auth.onDidChange(updateAuthStatus))
+
+  const syncStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90)
+  const updateSyncStatus = async (): Promise<void> => {
+    const count = await pendingSyncCount(context)
+    if (!auth.signedIn) {
+      syncStatus.text = '$(cloud-offline) Cloud sync'
+      syncStatus.tooltip = 'Sign in with Feishu to enable cloud sync'
+      syncStatus.command = 'pyroWiki.signIn'
+    } else if (count > 0) {
+      syncStatus.text = `$(sync) ${count} pending`
+      syncStatus.tooltip = `${count} document${count === 1 ? '' : 's'} waiting to sync. Click to retry.`
+      syncStatus.command = 'pyroWiki.retrySyncQueue'
+    } else {
+      syncStatus.text = '$(cloud) Synced'
+      syncStatus.tooltip = 'No pending cloud sync operations'
+      syncStatus.command = 'pyroWiki.retrySyncQueue'
+    }
+    syncStatus.show()
+  }
+  const retrySyncQueue = async (silent = false): Promise<void> => {
+    await retryQueued(context, auth, silent)
+    await updateSyncStatus()
+    void cloudDocuments.load()
+  }
+  const runPush = async (): Promise<void> => { await pushCurrent(context, auth); await updateSyncStatus(); void cloudDocuments.load() }
+  const runPull = async (): Promise<void> => { await pullCurrent(context, auth); await updateSyncStatus(); void cloudDocuments.load() }
+  const runDraft = async (): Promise<void> => { await saveDraftCurrent(context, auth); await updateSyncStatus(); void cloudDocuments.load() }
+  const handleAuthChange = (): void => {
+    updateAuthStatus()
+    void updateSyncStatus()
+    if (auth.signedIn) void retrySyncQueue(true)
+    void cloudDocuments.load()
+  }
+  void updateSyncStatus()
+  const syncStatusTimer = setInterval(() => { void updateSyncStatus() }, 5_000)
+  context.subscriptions.push(syncStatus, { dispose: () => clearInterval(syncStatusTimer) }, auth.onDidChange(handleAuthChange))
 
   const markdownDocuments = new WikiDocumentsProvider()
   const markdownTreeView = vscode.window.createTreeView('pyroWiki.documents', { treeDataProvider: markdownDocuments, showCollapseAll: true })
@@ -73,17 +109,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.compareCloudDocument', (document) => cloudDocuments.compareWithLocal(document)),
     vscode.commands.registerCommand('pyroWiki.pullCloudDocument', (document) => cloudDocuments.pullDocument(document)),
     vscode.commands.registerCommand('pyroWiki.pushCloudDocument', (document) => cloudDocuments.pushDocument(document)),
-    vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context, auth)),
-    vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context, auth)),
-    vscode.commands.registerCommand('pyroWiki.retrySyncQueue', () => retryQueued(context, auth)),
-    vscode.commands.registerCommand('pyroWiki.saveDraft', () => saveDraftCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.pullDocument', runPull),
+    vscode.commands.registerCommand('pyroWiki.pushDocument', runPush),
+    vscode.commands.registerCommand('pyroWiki.retrySyncQueue', () => retrySyncQueue(false)),
+    vscode.commands.registerCommand('pyroWiki.saveDraft', runDraft),
     vscode.commands.registerCommand('pyroWiki.viewRevisions', () => viewCurrentRevisions(auth)),
     vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pushCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.joinCollaboration', () => collaboration.join()),
     vscode.commands.registerCommand('pyroWiki.leaveCollaboration', () => collaboration.leave()),
     vscode.languages.registerCompletionItemProvider({ language: 'markdown' }, provider, '/'),
     vscode.workspace.onDidOpenTextDocument(async () => { await members(); void cloudDocuments.load() }),
-    vscode.workspace.onDidSaveTextDocument(() => { void cloudDocuments.load() }),
+    vscode.workspace.onDidSaveTextDocument(() => { void cloudDocuments.load(); void retrySyncQueue(true); void updateSyncStatus() }),
+    vscode.window.onDidChangeWindowState((state) => { if (state.focused) void retrySyncQueue(true) }),
     vscode.window.onDidChangeActiveTextEditor(async (editor) => {
       if (editor?.document.languageId === 'markdown') {
         await members()

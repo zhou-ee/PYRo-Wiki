@@ -95,9 +95,12 @@ export async function pushCurrent(context: vscode.ExtensionContext, auth: AuthMa
   }
 }
 
-export async function retryQueued(context: vscode.ExtensionContext, auth: AuthManager): Promise<void> {
+export async function retryQueued(context: vscode.ExtensionContext, auth: AuthManager, silent = false): Promise<void> {
   const queued = await pendingSyncItems(context)
-  if (!queued.length) return void vscode.window.showInformationMessage('PYRo Wiki sync queue is empty.')
+  if (!queued.length) {
+    if (!silent) void vscode.window.showInformationMessage('PYRo Wiki sync queue is empty.')
+    return
+  }
   let uploaded = 0
   for (const item of queued) {
     let document: vscode.TextDocument
@@ -111,13 +114,18 @@ export async function retryQueued(context: vscode.ExtensionContext, auth: AuthMa
       await removeSync(context, item.id)
       uploaded += 1
     } catch (error) {
-      if ((error as { status?: number }).status === 401) return void vscode.window.showWarningMessage('Sign in with Feishu before retrying the sync queue.')
-      if ((error as { status?: number }).status === 409) void vscode.window.showWarningMessage(`Queued document ${item.path} has a cloud conflict. Open it and resolve the conflict manually.`)
+      if ((error as { status?: number }).status === 401) {
+        if (!silent) void vscode.window.showWarningMessage('Sign in with Feishu before retrying the sync queue.')
+        return
+      }
+      if ((error as { status?: number }).status === 409) {
+        if (!silent) void vscode.window.showWarningMessage(`Queued document ${item.path} has a cloud conflict. Open it and resolve the conflict manually.`)
+      }
       else if (!isTransient(error)) await removeSync(context, item.id)
       break
     }
   }
-  if (uploaded) void vscode.window.showInformationMessage(`Uploaded ${uploaded} queued document${uploaded === 1 ? '' : 's'}.`)
+  if (uploaded && !silent) void vscode.window.showInformationMessage(`Uploaded ${uploaded} queued document${uploaded === 1 ? '' : 's'}.`)
 }
 
 export async function pullCurrent(context: vscode.ExtensionContext, auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
