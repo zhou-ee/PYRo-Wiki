@@ -3,7 +3,7 @@ import type { AuthProvider } from '../auth/session'
 export interface RemoteDocument {
   path: string
   title: string
-  content: string
+  content?: string
   revision: number
   updatedAt: string
 }

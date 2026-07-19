@@ -30,7 +30,7 @@ export async function pushCurrent(context: vscode.ExtensionContext, auth: AuthMa
     void vscode.window.showInformationMessage(`Uploaded revision ${result.revision}.`)
   } catch (error) {
     if ((error as { status?: number }).status === 409) {
-      const body = (error as { body?: { remote?: { content: string; revision: number }; common?: { content: string; revision: number } | null } }).body
+      const body = (error as { body?: { remote?: { content?: string; revision: number }; common?: { content: string; revision: number } | null } }).body
       const remote = await vscode.workspace.openTextDocument({ content: body?.remote?.content ?? '', language: 'markdown' })
       await vscode.commands.executeCommand('vscode.diff', document.uri, remote.uri, 'PYRo Wiki: Local / Remote Conflict')
       void vscode.window.showWarningMessage('Remote document changed. Review the diff before pushing again.')
@@ -48,7 +48,7 @@ export async function pullCurrent(context: vscode.ExtensionContext, auth: AuthMa
     const remote = await client.getDocument(documentPath(document))
     const edit = new vscode.WorkspaceEdit()
     const endLine = Math.max(0, document.lineCount - 1)
-    edit.replace(document.uri, new vscode.Range(0, 0, endLine, document.lineAt(endLine).text.length), remote.content)
+    edit.replace(document.uri, new vscode.Range(0, 0, endLine, document.lineAt(endLine).text.length), remote.content ?? '')
     await vscode.workspace.applyEdit(edit)
     await document.save()
     await context.workspaceState.update(`pyroWiki.revision.${document.uri.toString()}`, remote.revision)

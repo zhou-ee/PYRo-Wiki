@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'node:path'
-import { ApiClient, type RemoteDocument } from './sync/api'
+import { ApiClient, type RemoteDocument, type RemoteRevision } from './sync/api'
 import { AuthManager } from './auth/session'
 import { workspaceRoot } from './workspace'
 
@@ -69,6 +69,40 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
     } finally {
       this.loading = false
       this.refresh()
+    }
+  }
+
+
+  async showRevisions(document: RemoteDocument): Promise<void> {
+    const root = workspaceRoot(vscode.window.activeTextEditor?.document ?? vscode.window.visibleTextEditors[0]?.document) ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (!root) return void vscode.window.showWarningMessage('Open a workspace before viewing cloud revisions.')
+    try {
+      const revisions = (await this.client(root).revisions(document.path)).revisions
+      if (!revisions.length) return void vscode.window.showInformationMessage('This cloud document has no revisions yet.')
+      const picked = await vscode.window.showQuickPick(revisions.map((revision) => ({
+        label: `Revision ${revision.revision}`,
+        description: revision.updatedAt,
+        revision
+      })), { placeHolder: `Select a revision of ${document.path}` })
+      if (!picked) return
+      const remote = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
+      await vscode.window.showTextDocument(remote, { preview: false })
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not load cloud revisions: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async compareWithLocal(document: RemoteDocument): Promise<void> {
+    const root = workspaceRoot(vscode.window.activeTextEditor?.document ?? vscode.window.visibleTextEditors[0]?.document) ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (!root) return void vscode.window.showWarningMessage('Open a workspace before comparing a cloud document.')
+    try {
+      const remote = await this.client(root).getDocument(document.path)
+      const localUri = vscode.Uri.file(path.join(root, document.path))
+      const local = await vscode.workspace.openTextDocument(localUri)
+      const remoteDoc = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
+      await vscode.commands.executeCommand('vscode.diff', local.uri, remoteDoc.uri, `PYRo: ${document.path} local / cloud`)
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not compare cloud document: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

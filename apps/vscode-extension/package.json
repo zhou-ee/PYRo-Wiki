@@ -26,7 +26,9 @@
     "onCommand:pyroWiki.leaveCollaboration",
     "onView:pyroWiki.cloudDocuments",
     "onView:pyroWiki.collaboration",
-    "onUri"
+    "onUri",
+    "onCommand:pyroWiki.viewCloudRevisions",
+    "onCommand:pyroWiki.compareCloudDocument"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -115,6 +117,16 @@
         "command": "pyroWiki.leaveCollaboration",
         "title": "PYRo Wiki: Leave Collaboration",
         "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "pyroWiki.viewCloudRevisions",
+        "title": "PYRo Wiki: View Cloud Revisions",
+        "icon": "$(history)"
+      },
+      {
+        "command": "pyroWiki.compareCloudDocument",
+        "title": "PYRo Wiki: Compare Cloud Document",
+        "icon": "$(compare-changes)"
       }
     ],
     "configuration": {
@@ -225,6 +237,18 @@
           "command": "pyroWiki.leaveCollaboration",
           "when": "view == pyroWiki.collaboration",
           "group": "navigation@2"
+        }
+      ],
+      "view/item": [
+        {
+          "command": "pyroWiki.viewCloudRevisions",
+          "when": "view == pyroWiki.cloudDocuments && viewItem == pyroWiki.cloudDocument",
+          "group": "inline@1"
+        },
+        {
+          "command": "pyroWiki.compareCloudDocument",
+          "when": "view == pyroWiki.cloudDocuments && viewItem == pyroWiki.cloudDocument",
+          "group": "inline@1"
         }
       ]
     },

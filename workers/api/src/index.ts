@@ -43,9 +43,8 @@ async function readDocument(db: D1Database, workspace: string, documentPath: str
 
 async function listDocuments(db: D1Database, workspace: string): Promise<JsonRecord[]> {
   await ensureWorkspace(db, workspace)
-  const result = await db.prepare(`SELECT d.path, d.title, d.current_revision as revision, d.updated_at as updatedAt,
-      COALESCE(r.content, '') as content FROM documents d
-      LEFT JOIN revisions r ON r.document_id=d.id AND r.revision=d.current_revision
+  const result = await db.prepare(`SELECT d.path, d.title, d.current_revision as revision, d.updated_at as updatedAt
+      FROM documents d
       WHERE d.workspace_id=? ORDER BY d.path`).bind(workspace).all<JsonRecord>()
   return result.results ?? []
 }
