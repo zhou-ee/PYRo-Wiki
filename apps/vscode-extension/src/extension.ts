@@ -64,6 +64,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.signOut', () => auth.signOut()),
     vscode.commands.registerCommand('pyroWiki.refreshCloudDocuments', () => cloudDocuments.load()),
     vscode.commands.registerCommand('pyroWiki.openCloudDocument', (document) => cloudDocuments.openDocument(document)),
+    vscode.commands.registerCommand('pyroWiki.viewCloudRevisions', (document) => cloudDocuments.showRevisions(document)),
+    vscode.commands.registerCommand('pyroWiki.compareCloudDocument', (document) => cloudDocuments.compareWithLocal(document)),
     vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pullCurrent(context, auth)),
