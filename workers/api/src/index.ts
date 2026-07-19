@@ -7,6 +7,7 @@ export interface Env extends AuthEnv {
 }
 
 type JsonRecord = Record<string, unknown>
+type SocketPresence = { presenceId: string; userId: string; name: string }
 
 function json(body: JsonRecord, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
@@ -74,7 +75,7 @@ export class CollaborationRoom {
   private readonly doc = new Y.Doc()
   private loaded = false
   private loading: Promise<void> | undefined
-  private readonly socketUsers = new Map<WebSocket, string>()
+  private readonly socketUsers = new Map<WebSocket, SocketPresence>()
 
   constructor(private readonly state: DurableObjectState, _env: Env) {}
 
@@ -107,16 +108,25 @@ export class CollaborationRoom {
       } else if (message.type === 'hello') {
         if (typeof message.state === 'string') Y.applyUpdate(this.doc, fromBase64(message.state))
         this.persist()
-        const user = this.socketUsers.get(server) ?? 'anonymous'
+        const presence = this.socketUsers.get(server)
+        if (!presence) return server.send(JSON.stringify({ type: 'error', error: 'Collaboration identity unavailable' }))
+        const awareness = { type: 'awareness', presenceId: presence.presenceId, userId: presence.userId, user: presence.name, status: 'online' }
         server.send(JSON.stringify({ type: 'sync', update: toBase64(Y.encodeStateAsUpdate(this.doc)) }))
-        this.broadcast({ type: 'awareness', user, status: 'online' }, server)
+        server.send(JSON.stringify(awareness))
+        this.broadcast(awareness, server)
       } else if (message.type === 'update' && typeof message.update === 'string') {
         const update = fromBase64(message.update)
         Y.applyUpdate(this.doc, update)
         this.persist()
         this.broadcast({ type: 'update', update: toBase64(update) }, server)
         server.send(JSON.stringify({ type: 'ack' }))
-      } else if (message.type === 'awareness') this.broadcast(message, server)
+      } else if (message.type === 'awareness') {
+        const presence = this.socketUsers.get(server)
+        if (!presence) return
+        const awareness = { type: 'awareness', presenceId: presence.presenceId, userId: presence.userId, user: presence.name, status: message.status === 'offline' ? 'offline' : 'online' }
+        if (awareness.status === 'online') server.send(JSON.stringify(awareness))
+        this.broadcast(awareness, server)
+      }
     } catch { server.send(JSON.stringify({ type: 'error', error: 'Invalid collaboration message' })) }
   }
 
@@ -128,7 +138,7 @@ export class CollaborationRoom {
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
-    this.socketUsers.set(server, userName)
+    this.socketUsers.set(server, { presenceId: crypto.randomUUID(), userId, name: userName })
     this.state.acceptWebSocket(server)
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -138,9 +148,9 @@ export class CollaborationRoom {
   }
 
   webSocketClose(server: WebSocket): void {
-    const user = this.socketUsers.get(server)
+    const presence = this.socketUsers.get(server)
     this.socketUsers.delete(server)
-    this.broadcast({ type: 'awareness', user, status: 'offline' }, server)
+    if (presence) this.broadcast({ type: 'awareness', presenceId: presence.presenceId, userId: presence.userId, user: presence.name, status: 'offline' }, server)
   }
 
   webSocketError(server: WebSocket): void {

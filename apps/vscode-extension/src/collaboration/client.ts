@@ -31,7 +31,7 @@ export class CollaborationClient implements vscode.Disposable {
   private connectionGeneration = 0
   private lastMessageAt = 0
   private intentionalClose = false
-  private readonly users = new Set<string>()
+  private readonly users = new Map<string, string>()
   private readonly disposables: vscode.Disposable[] = []
   private readonly changeEmitter = new vscode.EventEmitter<CollaborationSnapshot>()
   private snapshot: CollaborationSnapshot = { status: 'offline', users: [] }
@@ -44,6 +44,8 @@ export class CollaborationClient implements vscode.Disposable {
   }
 
   get state(): CollaborationSnapshot { return this.snapshot }
+
+  private userNames(): string[] { return [...this.users.values()].sort((left, right) => left.localeCompare(right)) }
 
   async join(document = vscode.window.activeTextEditor?.document): Promise<void> {
     if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('Open a Wiki Markdown file before joining collaboration.')
@@ -83,7 +85,7 @@ export class CollaborationClient implements vscode.Disposable {
     const documentPath = encodeURIComponent(this.document.uri.fsPath.slice(root.length).replace(/^[\\/]+/, '').replaceAll('\\', '/'))
     const decodedPath = decodeURIComponent(documentPath)
     const url = `${baseUrl}/collaboration/${documentPath}?workspace=${workspaceId}`
-    this.update({ status: this.reconnectAttempt ? 'reconnecting' : 'connecting', documentPath: decodedPath, users: [...this.users] })
+    this.update({ status: this.reconnectAttempt ? 'reconnecting' : 'connecting', documentPath: decodedPath, users: this.userNames() })
     void this.auth.getAccessToken().then((token) => {
       if (!token || !this.document || generation !== this.connectionGeneration || this.intentionalClose) return
       const socket = new WebSocket(url, { headers: { authorization: `Bearer ${token}` } })
@@ -93,9 +95,9 @@ export class CollaborationClient implements vscode.Disposable {
         this.reconnectAttempt = 0
         this.lastMessageAt = Date.now()
         this.startHeartbeat(socket)
-        this.update({ status: 'connected', documentPath: decodedPath, users: [...this.users] })
-        this.send({ type: 'hello', state: encode(Y.encodeStateAsUpdate(this.ydoc)), user: this.auth.currentUser?.name ?? 'anonymous' })
-        this.send({ type: 'awareness', user: this.auth.currentUser?.name ?? 'anonymous', status: 'online' })
+        this.update({ status: 'connected', documentPath: decodedPath, users: this.userNames() })
+        this.send({ type: 'hello', state: encode(Y.encodeStateAsUpdate(this.ydoc)) })
+        this.send({ type: 'awareness', status: 'online' })
       })
       socket.on('message', (data) => {
         this.lastMessageAt = Date.now()
@@ -110,10 +112,10 @@ export class CollaborationClient implements vscode.Disposable {
       })
       socket.on('error', (error) => {
         if (generation !== this.connectionGeneration) return
-        this.update({ status: 'error', documentPath: decodedPath, users: [...this.users], error: error.message })
+        this.update({ status: 'error', documentPath: decodedPath, users: this.userNames(), error: error.message })
       })
     }).catch((error) => {
-      if (generation === this.connectionGeneration && !this.intentionalClose) this.update({ status: 'error', documentPath: decodedPath, users: [...this.users], error: error instanceof Error ? error.message : String(error) })
+      if (generation === this.connectionGeneration && !this.intentionalClose) this.update({ status: 'error', documentPath: decodedPath, users: this.userNames(), error: error instanceof Error ? error.message : String(error) })
     })
   }
 
@@ -135,7 +137,7 @@ export class CollaborationClient implements vscode.Disposable {
     if (this.reconnectTimer || !this.document) return
     this.reconnectAttempt += 1
     const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt - 1, 5))
-    this.update({ status: 'reconnecting', documentPath: this.snapshot.documentPath, users: [...this.users], error: `Retrying in ${Math.ceil(delay / 1000)}s` })
+    this.update({ status: 'reconnecting', documentPath: this.snapshot.documentPath, users: this.userNames(), error: `Retrying in ${Math.ceil(delay / 1000)}s` })
     this.reconnectTimer = setTimeout(() => { this.reconnectTimer = undefined; this.connect() }, delay)
   }
 
@@ -158,7 +160,7 @@ export class CollaborationClient implements vscode.Disposable {
 
   private receive(raw: string): void {
     try {
-      const message = JSON.parse(raw) as { type: string; update?: string; user?: string; status?: string; error?: string }
+      const message = JSON.parse(raw) as { type: string; update?: string; presenceId?: string; userId?: string; user?: string; status?: string; error?: string }
       if (message.type === 'pong') return
       if (message.type === 'sync' || message.type === 'update') {
         if (!message.update) return
@@ -175,10 +177,11 @@ export class CollaborationClient implements vscode.Disposable {
           this.applyingRemote = false
         }
       } else if (message.type === 'awareness' && message.user) {
-        if (message.status === 'offline') this.users.delete(message.user)
-        else this.users.add(message.user)
-        this.update({ status: this.snapshot.status, documentPath: this.snapshot.documentPath, users: [...this.users], error: this.snapshot.error })
-      } else if (message.type === 'error') this.update({ status: 'error', documentPath: this.snapshot.documentPath, users: [...this.users], error: message.error ?? 'Collaboration server error' })
+        const presenceId = message.presenceId ?? message.userId ?? message.user
+        if (message.status === 'offline') this.users.delete(presenceId)
+        else this.users.set(presenceId, message.user)
+        this.update({ status: this.snapshot.status, documentPath: this.snapshot.documentPath, users: this.userNames(), error: this.snapshot.error })
+      } else if (message.type === 'error') this.update({ status: 'error', documentPath: this.snapshot.documentPath, users: this.userNames(), error: message.error ?? 'Collaboration server error' })
     } catch { /* malformed peer messages are ignored */ }
   }
 
