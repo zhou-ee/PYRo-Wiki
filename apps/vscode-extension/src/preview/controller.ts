@@ -81,7 +81,9 @@ export class PreviewController implements vscode.Disposable {
     if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
     this.pendingRenderTimer = setTimeout(() => {
       this.pendingRenderTimer = undefined
-      void this.queueRender(document, true)
+      // Vite's HMR updates the current Vue page in place. Do not replace the iframe
+      // on every keystroke, otherwise the page flashes blank and loses its scroll.
+      void this.queueRender(document, false)
     }, 180)
   }
 

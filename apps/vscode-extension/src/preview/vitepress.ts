@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as net from 'node:net'
 import * as path from 'node:path'
+import WebSocket, { WebSocketServer } from 'ws'
 import type { Disposable, TextDocument } from 'vscode'
 
 export interface VitePressPreviewServerOptions {
@@ -58,7 +59,7 @@ async function waitForHttp(port: number, timeoutMs = 30_000): Promise<void> {
 }
 
 function bridgeScript(): string {
-  return `<script>(function(){var parentWindow=window.parent;var pageKey=location.pathname;var frameState=function(){var root=document.documentElement;var body=document.body;var top=window.scrollY||root.scrollTop||body&&body.scrollTop||0;var viewport=Math.max(1,window.innerHeight||root.clientHeight);var height=Math.max(root.scrollHeight,root.offsetHeight,body?body.scrollHeight:0,body?body.offsetHeight:0);var max=Math.max(0,height-viewport);return {top:top,viewport:viewport,height:height,max:max,ratio:max===0?0:Math.max(0,Math.min(1,top/max))}};var ratio=function(){return frameState().ratio};var applyRatio=function(value){var state=frameState();var top=Math.max(0,Math.min(1,Number(value)||0))*state.max;window.scrollTo(0,top);if(document.scrollingElement)document.scrollingElement.scrollTop=top;document.documentElement.scrollTop=top;if(document.body)document.body.scrollTop=top};var programmatic=false;var raf=0;window.addEventListener('scroll',function(){if(programmatic||raf)return;raf=window.requestAnimationFrame(function(){raf=0;if(!programmatic)parentWindow.postMessage({type:'previewScroll',ratio:ratio(),pageKey:pageKey},'*')})},{passive:true});window.addEventListener('message',function(event){if(event.data&&event.data.type==='sourceScroll'){programmatic=true;applyRatio(event.data.ratio);window.setTimeout(function(){programmatic=false},250)}});window.addEventListener('load',function(){parentWindow.postMessage({type:'previewReady',pageKey:pageKey},'*')});})();</script>`
+  return `<script>(function(){var parentWindow=window.parent;var pageKey=location.pathname;var storageKey='pyroWikiScroll:'+pageKey;var frameState=function(){var root=document.documentElement;var body=document.body;var top=window.scrollY||root.scrollTop||body&&body.scrollTop||0;var viewport=Math.max(1,window.innerHeight||root.clientHeight);var height=Math.max(root.scrollHeight,root.offsetHeight,body?body.scrollHeight:0,body?body.offsetHeight:0);var max=Math.max(0,height-viewport);return {top:top,viewport:viewport,height:height,max:max,ratio:max===0?0:Math.max(0,Math.min(1,top/max))}};var ratio=function(){return frameState().ratio};var applyRatio=function(value){var state=frameState();var top=Math.max(0,Math.min(1,Number(value)||0))*state.max;window.scrollTo(0,top);if(document.scrollingElement)document.scrollingElement.scrollTop=top;document.documentElement.scrollTop=top;if(document.body)document.body.scrollTop=top};var restore=function(){var saved=sessionStorage.getItem(storageKey);if(saved!==null){sessionStorage.removeItem(storageKey);window.requestAnimationFrame(function(){window.requestAnimationFrame(function(){applyRatio(saved)})})}};var programmatic=false;var raf=0;window.addEventListener('scroll',function(){if(programmatic||raf)return;raf=window.requestAnimationFrame(function(){raf=0;if(!programmatic)parentWindow.postMessage({type:'previewScroll',ratio:ratio(),pageKey:pageKey},'*')})},{passive:true});window.addEventListener('message',function(event){if(event.data&&event.data.type==='sourceScroll'){programmatic=true;applyRatio(event.data.ratio);window.setTimeout(function(){programmatic=false},250)}});window.addEventListener('beforeunload',function(){sessionStorage.setItem(storageKey,String(ratio()))});window.addEventListener('load',function(){restore();parentWindow.postMessage({type:'previewReady',pageKey:pageKey},'*')});})();</script>`
 }
 
 function webviewDocument(url: string, cspSource: string): string {
@@ -74,6 +75,8 @@ export class VitePressPreviewServer implements Disposable {
   private proxyPort: number | undefined
   private viteProcess: childProcess.ChildProcess | undefined
   private proxyServer: http.Server | undefined
+  private readonly proxyWebSocketServer = new WebSocketServer({ noServer: true })
+  private readonly proxyWebSockets = new Set<WebSocket>()
   private starting: Promise<void> | undefined
 
   get root(): string | undefined {
@@ -120,6 +123,7 @@ export class VitePressPreviewServer implements Disposable {
     await waitForHttp(vitePort)
 
     const proxyServer = http.createServer((request, response) => this.proxyRequest(request, response))
+    proxyServer.on('upgrade', (request, socket, head) => this.proxyUpgrade(request, socket, head))
     await new Promise<void>((resolve, reject) => {
       proxyServer.once('error', reject)
       proxyServer.listen(0, '127.0.0.1', () => resolve())
@@ -157,7 +161,6 @@ export class VitePressPreviewServer implements Disposable {
       upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk))
       upstreamResponse.on('end', () => {
         let body = Buffer.concat(chunks).toString('utf8')
-        body = body.replace(/<script[^>]+src=[\"']\/\@vite\/client[\"'][^>]*><\/script>/g, '')
         body = body.replace('</head>', `${bridgeScript()}</head>`)
         const headers = { ...upstreamResponse.headers }
         delete headers['content-length']
@@ -171,6 +174,35 @@ export class VitePressPreviewServer implements Disposable {
       response.end('Unable to reach VitePress preview server')
     })
     request.pipe(upstream)
+  }
+
+  private proxyUpgrade(request: http.IncomingMessage, socket: import('node:stream').Duplex, head: Buffer): void {
+    if (!this.vitePort) {
+      socket.destroy()
+      return
+    }
+    this.proxyWebSocketServer.handleUpgrade(request, socket as import('node:net').Socket, head, (client) => {
+      const protocol = request.headers['sec-websocket-protocol']
+      const target = new WebSocket(`ws://127.0.0.1:${this.vitePort}${request.url ?? '/'}`, protocol ? String(protocol).split(',').map((value) => value.trim()) : undefined)
+      this.proxyWebSockets.add(client)
+      this.proxyWebSockets.add(target)
+      const cleanup = () => {
+        this.proxyWebSockets.delete(client)
+        this.proxyWebSockets.delete(target)
+      }
+      target.once('open', () => {
+        client.on('message', (data, isBinary) => {
+          if (target.readyState === WebSocket.OPEN) target.send(data, { binary: isBinary })
+        })
+        target.on('message', (data, isBinary) => {
+          if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary })
+        })
+      })
+      target.once('error', () => client.close())
+      client.once('error', () => target.close())
+      target.once('close', () => { cleanup(); client.close() })
+      client.once('close', () => { cleanup(); target.close() })
+    })
   }
 
   urlFor(document: TextDocument): string {
@@ -189,6 +221,8 @@ export class VitePressPreviewServer implements Disposable {
     if (this.starting) {
       try { await this.starting } catch { /* continue cleanup */ }
     }
+    for (const socket of this.proxyWebSockets) socket.terminate()
+    this.proxyWebSockets.clear()
     const proxyServer = this.proxyServer
     this.proxyServer = undefined
     this.proxyPort = undefined

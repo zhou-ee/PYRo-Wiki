@@ -168,3 +168,5 @@ void writer_task() {
 ```
 
 ## Q&A
+
+<AuthorCard author="Lucky" />

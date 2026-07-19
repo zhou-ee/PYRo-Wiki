@@ -5,6 +5,7 @@ import DefaultTheme from 'vitepress/theme'
 import './style.css'
 import Layout from './Layout.vue'
 import RecentUpdates from './components/RecentUpdates.vue'
+import AuthorCard from './components/AuthorCard.vue'
 
 export default {
   extends: DefaultTheme,
@@ -15,5 +16,6 @@ export default {
   },
   enhanceApp({ app, router, siteData }) {
     app.component('RecentUpdates', RecentUpdates)
+    app.component('AuthorCard', AuthorCard)
   }
 } satisfies Theme
