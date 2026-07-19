@@ -70,6 +70,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.openCloudDocument', (document) => cloudDocuments.openDocument(document)),
     vscode.commands.registerCommand('pyroWiki.viewCloudRevisions', (document) => cloudDocuments.showRevisions(document)),
     vscode.commands.registerCommand('pyroWiki.compareCloudDocument', (document) => cloudDocuments.compareWithLocal(document)),
+    vscode.commands.registerCommand('pyroWiki.pullCloudDocument', (document) => cloudDocuments.pullDocument(document)),
+    vscode.commands.registerCommand('pyroWiki.pushCloudDocument', (document) => cloudDocuments.pushDocument(document)),
     vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.retrySyncQueue', () => retryQueued(context, auth)),
@@ -80,6 +82,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.leaveCollaboration', () => collaboration.leave()),
     vscode.languages.registerCompletionItemProvider({ language: 'markdown' }, provider, '/'),
     vscode.workspace.onDidOpenTextDocument(async () => { await members(); void cloudDocuments.load() }),
+    vscode.workspace.onDidSaveTextDocument(() => { void cloudDocuments.load() }),
     vscode.window.onDidChangeActiveTextEditor(async (editor) => {
       if (editor?.document.languageId === 'markdown') {
         await members()

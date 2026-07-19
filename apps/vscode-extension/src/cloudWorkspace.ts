@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'node:path'
-import { ApiClient, type RemoteDocument, type RemoteRevision } from './sync/api'
+import { ApiClient, ApiError, type RemoteDocument, type RemoteRevision } from './sync/api'
 import { AuthManager } from './auth/session'
 import { workspaceRoot } from './workspace'
 
@@ -43,7 +43,7 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
       return item
     }
     const item = new vscode.TreeItem(node.document.path, vscode.TreeItemCollapsibleState.None)
-    item.description = `r${node.document.revision} ? ${this.syncLabel(node.syncStatus)}`
+    item.description = `r${node.document.revision} - ${this.syncLabel(node.syncStatus)}`
     item.tooltip = `${node.document.title}\nUpdated: ${node.document.updatedAt}\nSync: ${this.syncLabel(node.syncStatus)}`
     item.contextValue = 'pyroWiki.cloudDocument'
     item.iconPath = new vscode.ThemeIcon(this.syncIcon(node.syncStatus))
@@ -98,35 +98,134 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
   }
 
   async compareWithLocal(document: RemoteDocument): Promise<void> {
-    const root = workspaceRoot(vscode.window.activeTextEditor?.document ?? vscode.window.visibleTextEditors[0]?.document) ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const root = this.currentRoot()
     if (!root) return void vscode.window.showWarningMessage('Open a workspace before comparing a cloud document.')
     try {
-      const remote = await this.client(root).getDocument(document.path)
-      const localUri = vscode.Uri.file(path.join(root, document.path))
+      const localUri = this.localUri(root, document.path)
       const local = await vscode.workspace.openTextDocument(localUri)
+      const remote = await this.client(root).getDocument(document.path)
       const remoteDoc = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
       await vscode.commands.executeCommand('vscode.diff', local.uri, remoteDoc.uri, `PYRo: ${document.path} local / cloud`)
     } catch (error) {
-      void vscode.window.showErrorMessage(`Could not compare cloud document: ${error instanceof Error ? error.message : String(error)}`)
+      if ((error as { code?: string }).code === 'FileNotFound') void vscode.window.showWarningMessage(`No local copy exists for ${document.path}. Use Open or Pull first.`)
+      else void vscode.window.showErrorMessage(`Could not compare cloud document: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
   async openDocument(document: RemoteDocument): Promise<void> {
-    const root = workspaceRoot(vscode.window.activeTextEditor?.document ?? vscode.window.visibleTextEditors[0]?.document) ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    const root = this.currentRoot()
     if (!root) return void vscode.window.showWarningMessage('Open a workspace before opening a cloud document.')
     try {
+      const localUri = this.localUri(root, document.path)
+      try {
+        const local = await vscode.workspace.openTextDocument(localUri)
+        await vscode.window.showTextDocument(local, { preview: false })
+        return
+      } catch { /* create a local copy below */ }
       const remote = await this.client(root).getDocument(document.path)
-      const local = await vscode.workspace.openTextDocument({ content: remote.content, language: 'markdown' })
+      const choice = await vscode.window.showQuickPick([
+        { label: 'Create local copy', value: 'create', description: `Write ${document.path} into the current workspace.` },
+        { label: 'Open temporary copy', value: 'temporary', description: 'Open without creating a workspace file.' },
+        { label: 'Cancel', value: 'cancel' }
+      ], { placeHolder: `No local copy exists for ${document.path}` })
+      if (!choice || choice.value === 'cancel') return
+      if (choice.value === 'temporary') {
+        const temporary = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
+        await vscode.window.showTextDocument(temporary, { preview: false })
+        return
+      }
+      await this.writeLocal(localUri, remote.content ?? '')
+      await this.context.workspaceState.update(this.revisionKey(localUri), remote.revision)
+      const local = await vscode.workspace.openTextDocument(localUri)
       await vscode.window.showTextDocument(local, { preview: false })
+      await this.load()
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not open cloud document: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
+  async pullDocument(document: RemoteDocument): Promise<void> {
+    const root = this.currentRoot()
+    if (!root) return void vscode.window.showWarningMessage('Open a workspace before pulling a cloud document.')
+    try {
+      const remote = await this.client(root).getDocument(document.path)
+      const localUri = this.localUri(root, document.path)
+      let local: vscode.TextDocument | undefined
+      try { local = await vscode.workspace.openTextDocument(localUri) } catch { /* create below */ }
+      if (local?.isDirty) {
+        const choice = await vscode.window.showWarningMessage(`${document.path} has unsaved local changes. Replace them with revision ${remote.revision}?`, 'Replace', 'Cancel')
+        if (choice !== 'Replace') return
+      }
+      if (local) {
+        await this.replaceDocument(local, remote.content ?? '')
+        await local.save()
+      } else {
+        await this.writeLocal(localUri, remote.content ?? '')
+      }
+      await this.context.workspaceState.update(this.revisionKey(localUri), remote.revision)
+      const opened = local ?? await vscode.workspace.openTextDocument(localUri)
+      await opened.save()
+      await vscode.window.showTextDocument(opened, { preview: false })
+      void vscode.window.showInformationMessage(`Pulled ${document.path} revision ${remote.revision}.`)
+      await this.load()
+    } catch (error) {
+      this.showApiError('Could not pull cloud document', error)
+    }
+  }
+
+  async pushDocument(document: RemoteDocument): Promise<void> {
+    const root = this.currentRoot()
+    if (!root) return void vscode.window.showWarningMessage('Open a workspace before pushing a cloud document.')
+    try {
+      const localUri = this.localUri(root, document.path)
+      const local = await vscode.workspace.openTextDocument(localUri)
+      const baseRevision = this.context.workspaceState.get<number>(this.revisionKey(localUri), document.revision)
+      const result = await this.client(root).putDocument(document.path, local.getText(), baseRevision)
+      await this.context.workspaceState.update(this.revisionKey(localUri), result.revision)
+      void vscode.window.showInformationMessage(`Uploaded ${document.path} revision ${result.revision}.`)
+      await this.load()
+    } catch (error) {
+      if ((error as { status?: number }).status === 409) void vscode.window.showWarningMessage(`Cloud document ${document.path} changed remotely. Use Compare Cloud Document or Pull before pushing again.`)
+      else this.showApiError('Could not push cloud document', error)
+    }
+  }
+
   refresh(): void { this.emitter.fire() }
 
+  private currentRoot(): string | undefined {
+    return workspaceRoot(vscode.window.activeTextEditor?.document ?? vscode.window.visibleTextEditors[0]?.document) ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+  }
+
+  private localUri(root: string, remotePath: string): vscode.Uri {
+    const normalized = remotePath.replaceAll('\\', '/').replace(/^\/+/, '')
+    if (!normalized || path.isAbsolute(normalized) || normalized.split('/').includes('..')) throw new Error('Unsafe cloud document path')
+    const rootPath = path.resolve(root)
+    const filePath = path.resolve(rootPath, ...normalized.split('/'))
+    if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${path.sep}`)) throw new Error('Unsafe cloud document path')
+    return vscode.Uri.file(filePath)
+  }
+
+  private revisionKey(uri: vscode.Uri): string { return `pyroWiki.revision.${uri.toString()}` }
+
+  private async replaceDocument(document: vscode.TextDocument, content: string): Promise<void> {
+    const edit = new vscode.WorkspaceEdit()
+    const endLine = Math.max(0, document.lineCount - 1)
+    edit.replace(document.uri, new vscode.Range(0, 0, endLine, document.lineAt(endLine).text.length), content)
+    await vscode.workspace.applyEdit(edit)
+  }
+
+  private async writeLocal(uri: vscode.Uri, content: string): Promise<void> {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)))
+    await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
+  }
+
+  private showApiError(prefix: string, error: unknown): void {
+    if (error instanceof ApiError && error.status === 401) void vscode.window.showWarningMessage('Sign in with Feishu before using cloud document sync.')
+    else void vscode.window.showErrorMessage(`${prefix}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
   private async syncStatus(root: string, document: RemoteDocument): Promise<CloudSyncStatus> {
-    const localUri = vscode.Uri.file(path.join(root, document.path))
+    const localUri = this.localUri(root, document.path)
     try { await vscode.workspace.fs.stat(localUri) } catch { return 'missing-local' }
     const revisionKey = `pyroWiki.revision.${localUri.toString()}`
     const localRevision = this.context.workspaceState.get<number | undefined>(revisionKey)

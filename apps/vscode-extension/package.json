@@ -32,7 +32,9 @@
     "onCommand:pyroWiki.completeFeishuLogin",
     "onCommand:pyroWiki.saveDraft",
     "onCommand:pyroWiki.viewRevisions",
-    "onCommand:pyroWiki.retrySyncQueue"
+    "onCommand:pyroWiki.retrySyncQueue",
+    "onCommand:pyroWiki.pullCloudDocument",
+    "onCommand:pyroWiki.pushCloudDocument"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -151,6 +153,16 @@
         "command": "pyroWiki.retrySyncQueue",
         "title": "PYRo Wiki: Retry Sync Queue",
         "icon": "$(sync)"
+      },
+      {
+        "command": "pyroWiki.pullCloudDocument",
+        "title": "PYRo Wiki: Pull Cloud Document",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "pyroWiki.pushCloudDocument",
+        "title": "PYRo Wiki: Push Cloud Document",
+        "icon": "$(cloud-upload)"
       }
     ],
     "configuration": {
@@ -293,6 +305,16 @@
           "command": "pyroWiki.compareCloudDocument",
           "when": "view == pyroWiki.cloudDocuments && viewItem == pyroWiki.cloudDocument",
           "group": "inline@1"
+        },
+        {
+          "command": "pyroWiki.pullCloudDocument",
+          "when": "view == pyroWiki.cloudDocuments && viewItem == pyroWiki.cloudDocument",
+          "group": "inline@2"
+        },
+        {
+          "command": "pyroWiki.pushCloudDocument",
+          "when": "view == pyroWiki.cloudDocuments && viewItem == pyroWiki.cloudDocument",
+          "group": "inline@3"
         }
       ]
     },
