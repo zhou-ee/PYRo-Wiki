@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { ApiClient, ApiError, type RemoteDocument, type RemoteRevision } from './sync/api'
 import { AuthManager } from './auth/session'
 import { workspaceRoot } from './workspace'
+import { cloudSyncStatus, filterCloudDocuments, type CloudSyncStatus } from './cloudWorkspaceLogic'
 
 const DEFAULT_API_BASE_URL = 'https://pyro-wiki-api.luckyy.ccwu.cc'
 
@@ -11,7 +12,7 @@ export type CloudNode =
   | { kind: 'signIn' }
   | { kind: 'empty' }
 
-export type CloudSyncStatus = 'synced' | 'remote-newer' | 'local-newer' | 'not-pulled' | 'missing-local'
+export type { CloudSyncStatus } from './cloudWorkspaceLogic'
 
 export function workspaceIdForRoot(root: string): string {
   return path.basename(root).replace(/[^A-Za-z0-9_-]/g, '-').toLowerCase() || 'default'
@@ -56,8 +57,7 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
     if (!this.auth.signedIn) return [{ kind: 'signIn' }]
     if (this.loading) return []
     if (!this.documents.length) await this.load()
-    const query = this.searchQuery.toLocaleLowerCase()
-    const documents = query ? this.documents.filter((document) => `${document.path} ${document.title}`.toLocaleLowerCase().includes(query)) : this.documents
+    const documents = filterCloudDocuments(this.documents, this.searchQuery)
     return documents.length ? documents.map((document) => ({ kind: 'document', document, syncStatus: this.syncStatuses.get(document.path) ?? 'not-pulled' })) : [{ kind: 'empty' }]
   }
 
@@ -237,12 +237,14 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
 
   private async syncStatus(root: string, document: RemoteDocument): Promise<CloudSyncStatus> {
     const localUri = this.localUri(root, document.path)
-    try { await vscode.workspace.fs.stat(localUri) } catch { return 'missing-local' }
+    try {
+      await vscode.workspace.fs.stat(localUri)
+    } catch {
+      return cloudSyncStatus(false, undefined, document.revision)
+    }
     const revisionKey = `pyroWiki.revision.${localUri.toString()}`
     const localRevision = this.context.workspaceState.get<number | undefined>(revisionKey)
-    if (localRevision === undefined) return 'not-pulled'
-    if (localRevision === document.revision) return 'synced'
-    return localRevision < document.revision ? 'remote-newer' : 'local-newer'
+    return cloudSyncStatus(true, localRevision, document.revision)
   }
 
   private syncLabel(status: CloudSyncStatus): string {

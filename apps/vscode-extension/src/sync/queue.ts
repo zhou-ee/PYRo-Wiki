@@ -1,14 +1,7 @@
 import * as vscode from 'vscode'
+import { removePendingSyncItem, upsertPendingSyncItem, type NewPendingSyncItem, type PendingSyncItem } from './queueLogic'
 
-export interface PendingSyncItem {
-  id: string
-  uri: string
-  path: string
-  workspaceId: string
-  content: string
-  baseRevision: number
-  queuedAt: string
-}
+export type { PendingSyncItem } from './queueLogic'
 
 const QUEUE_KEY = 'pyroWiki.syncQueue'
 
@@ -16,17 +9,14 @@ export async function pendingSyncItems(context: vscode.ExtensionContext): Promis
   return context.workspaceState.get<PendingSyncItem[]>(QUEUE_KEY, [])
 }
 
-export async function enqueueSync(context: vscode.ExtensionContext, item: Omit<PendingSyncItem, 'id' | 'queuedAt'>): Promise<void> {
+export async function enqueueSync(context: vscode.ExtensionContext, item: NewPendingSyncItem): Promise<void> {
   const current = await pendingSyncItems(context)
-  const id = item.uri
-  const next = current.filter((queued) => queued.id !== id)
-  next.push({ ...item, id, queuedAt: new Date().toISOString() })
-  await context.workspaceState.update(QUEUE_KEY, next)
+  await context.workspaceState.update(QUEUE_KEY, upsertPendingSyncItem(current, item, new Date().toISOString()))
 }
 
 export async function removeSync(context: vscode.ExtensionContext, id: string): Promise<void> {
   const current = await pendingSyncItems(context)
-  await context.workspaceState.update(QUEUE_KEY, current.filter((item) => item.id !== id))
+  await context.workspaceState.update(QUEUE_KEY, removePendingSyncItem(current, id))
 }
 
 export async function pendingSyncCount(context: vscode.ExtensionContext): Promise<number> {
