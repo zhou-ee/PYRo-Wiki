@@ -7,20 +7,39 @@ import { PreviewController } from './preview/controller'
 import { configuredWikiRoot, selectWikiRoot } from './workspace'
 import { pullCurrent, pushCurrent } from './sync/commands'
 import { CollaborationClient } from './collaboration/client'
+import { CollaborationProvider } from './collaboration/workspace'
 import { extendMarkdownIt as extendNativeMarkdownIt } from './preview/native'
 import { createRepositoryStatusItem, pullRepository, showRepositoryStatus } from './git'
 import { WikiDocumentsProvider, searchMarkdownDocuments } from './markdownWorkspace'
+import { AuthManager } from './auth/session'
+import { CloudDocumentsProvider } from './cloudWorkspace'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const auth = new AuthManager(context)
+  await auth.initialize()
   const preview = new PreviewController(context)
-  const collaboration = new CollaborationClient()
-  context.subscriptions.push(preview, collaboration)
+  const collaboration = new CollaborationClient(auth)
+  const collaborationProvider = new CollaborationProvider(collaboration)
+  const cloudDocuments = new CloudDocumentsProvider(auth)
+  context.subscriptions.push(auth, preview, collaboration, collaborationProvider, cloudDocuments)
+
   createRepositoryStatusItem(context)
+  const authStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
+  authStatus.command = 'pyroWiki.signIn'
+  const updateAuthStatus = () => {
+    authStatus.text = auth.currentUser ? `$(account) ${auth.currentUser.name}` : '$(sign-in) PYRo Login'
+    authStatus.tooltip = auth.currentUser ? `Signed in to PYRo Wiki as ${auth.currentUser.name}` : 'Sign in to PYRo Wiki with Feishu'
+    authStatus.command = auth.currentUser ? 'pyroWiki.signOut' : 'pyroWiki.signIn'
+    authStatus.show()
+  }
+  updateAuthStatus()
+  context.subscriptions.push(authStatus, auth.onDidChange(updateAuthStatus))
+
   const markdownDocuments = new WikiDocumentsProvider()
   const markdownTreeView = vscode.window.createTreeView('pyroWiki.documents', { treeDataProvider: markdownDocuments, showCollapseAll: true })
-  context.subscriptions.push(markdownDocuments, markdownTreeView)
-  // This activity-bar view is an independent Markdown document index. It does
-  // not replace the current folder and does not modify Explorer's visibility.
+  const cloudTreeView = vscode.window.createTreeView('pyroWiki.cloudDocuments', { treeDataProvider: cloudDocuments, showCollapseAll: false })
+  const collaborationTreeView = vscode.window.createTreeView('pyroWiki.collaboration', { treeDataProvider: collaborationProvider, showCollapseAll: false })
+  context.subscriptions.push(markdownDocuments, markdownTreeView, cloudTreeView, collaborationTreeView)
 
   const members = async (): Promise<Record<string, import('./preview/parser').Member>> => {
     const document = vscode.window.activeTextEditor?.document
@@ -40,24 +59,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.openMarkdownWorkspace', () => vscode.commands.executeCommand('workbench.view.extension.pyroWiki')),
     vscode.commands.registerCommand('pyroWiki.searchMarkdownDocuments', searchMarkdownDocuments),
     vscode.commands.registerCommand('pyroWiki.refreshDocuments', () => markdownDocuments.refresh()),
-    vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context)),
-    vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context)),
-    vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pullCurrent(context)),
+    vscode.commands.registerCommand('pyroWiki.signIn', () => auth.signIn()),
+    vscode.commands.registerCommand('pyroWiki.signOut', () => auth.signOut()),
+    vscode.commands.registerCommand('pyroWiki.refreshCloudDocuments', () => cloudDocuments.load()),
+    vscode.commands.registerCommand('pyroWiki.openCloudDocument', (document) => cloudDocuments.openDocument(document)),
+    vscode.commands.registerCommand('pyroWiki.pullDocument', () => pullCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.pushDocument', () => pushCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pullCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.joinCollaboration', () => collaboration.join()),
+    vscode.commands.registerCommand('pyroWiki.leaveCollaboration', () => collaboration.leave()),
     vscode.languages.registerCompletionItemProvider({ language: 'markdown' }, provider, '/'),
-    vscode.workspace.onDidOpenTextDocument(async () => { await members() }),
+    vscode.workspace.onDidOpenTextDocument(async () => { await members(); void cloudDocuments.load() }),
     vscode.window.onDidChangeActiveTextEditor(async (editor) => {
-      if (editor?.document.languageId === 'markdown') await members()
-    }),
+      if (editor?.document.languageId === 'markdown') {
+        await members()
+        void cloudDocuments.load()
+      }
+    })
   )
   const activeDocument = vscode.window.activeTextEditor?.document
   if (activeDocument?.languageId === 'markdown') {
-    // Start VitePress in the background while activation finishes so the first
-    // preview command can reuse the already-warm dev server.
     void preview.warmup(activeDocument)
     await members()
   }
-
 }
 
 export function deactivate(): void {}

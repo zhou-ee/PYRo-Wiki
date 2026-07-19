@@ -1,18 +1,30 @@
-﻿# PYRo Wiki VS Code extension
+# PYRo Wiki VS Code extension
 
-This extension provides a full VitePress/Vue preview for PYRo Wiki Markdown documents, slash-command snippets, author completion, optional Worker synchronization, and Yjs collaboration.
+This extension provides local VitePress preview, Markdown workspace navigation, Feishu-authenticated cloud document sync, and Yjs collaboration for PYRo Wiki.
 
-## Full VitePress preview
+## Production cloud API
 
-The `PYRo Wiki: Open Preview` command starts the VitePress development server from the configured Wiki root and loads the real VitePress page inside the VS Code Webview. This means the preview uses the Wiki's own:
+The default API is:
 
-- `.vitepress/config.*`
-- custom theme and layout
-- Vue components and `script setup`
-- VitePress Markdown compiler
-- static assets and route resolution
+```text
+https://pyro-wiki-api.luckyy.ccwu.cc
+```
 
-VitePress must be installed in the Wiki workspace, normally through the root `package.json`. The preview saves dirty Markdown files before reloading by default (`pyroWiki.syncUnsavedPreview`) so the VitePress server cannot render an older on-disk copy.
+Override it with `pyroWiki.apiBaseUrl` for local development.
+
+## Feishu login
+
+Use `PYRo Wiki: Sign in with Feishu`. The browser authorization callback is:
+
+```text
+https://pyro-wiki-api.luckyy.ccwu.cc/auth/feishu/callback
+```
+
+After authorization, the Worker returns a one-time handoff code to the VS Code URI handler. Long-lived refresh tokens are stored in VS Code SecretStorage, not in the repository or Webview URL.
+
+## Cloud documents and collaboration
+
+The PYRo Wiki activity bar includes: local Markdown documents, Cloud Documents, and Collaboration. Cloud Documents loads remote D1-backed revisions after login. Collaboration connects the current Wiki Markdown document to the authenticated Durable Object/Yjs room and retries after temporary disconnects.
 
 ## Development
 
@@ -23,4 +35,4 @@ npm test
 npm run package
 ```
 
-The extension keeps the old safe Markdown-it adapter only for VS Code's native Markdown-it integration. The PYRo Wiki preview command itself no longer renders Markdown through the component allowlist.
+The full preview command starts the Wiki workspace's own VitePress development server.

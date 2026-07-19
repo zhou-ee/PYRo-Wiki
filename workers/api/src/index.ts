@@ -1,16 +1,14 @@
 import * as Y from 'yjs'
+import { authenticateRequest, handleAuthRequest, isAuthResponse, type AuthEnv, type AuthUser } from './auth'
 
-export interface Env {
-  DB: D1Database
+export interface Env extends AuthEnv {
   COLLABORATION_ROOM: DurableObjectNamespace
-  PYRO_AUTH_MODE: string
-  PYRO_ENVIRONMENT: string
 }
 
 type JsonRecord = Record<string, unknown>
 
 function json(body: JsonRecord, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
 }
 function error(message: string, status = 400): Response { return json({ error: message }, status) }
 function now(): string { return new Date().toISOString() }
@@ -52,7 +50,7 @@ async function listDocuments(db: D1Database, workspace: string): Promise<JsonRec
   return result.results ?? []
 }
 
-async function writeDocument(db: D1Database, workspace: string, documentPath: string, content: string, baseRevision: number, kind: 'published' | 'draft', message?: string): Promise<JsonRecord | Response> {
+async function writeDocument(db: D1Database, workspace: string, documentPath: string, content: string, baseRevision: number, kind: 'published' | 'draft', authorId: string, message?: string): Promise<JsonRecord | Response> {
   await ensureDocument(db, workspace, documentPath)
   const current = await db.prepare('SELECT current_revision as revision FROM documents WHERE id=?').bind(idFor(workspace, documentPath)).first<{ revision: number }>()
   const revision = Number(current?.revision ?? 0)
@@ -65,7 +63,7 @@ async function writeDocument(db: D1Database, workspace: string, documentPath: st
   const documentId = idFor(workspace, documentPath)
   const revisionId = crypto.randomUUID()
   await db.batch([
-    db.prepare('INSERT INTO revisions (id, document_id, revision, content, kind, message, author_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(revisionId, documentId, next, content, kind, message ?? null, 'dev-anonymous', now()),
+    db.prepare('INSERT INTO revisions (id, document_id, revision, content, kind, message, author_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(revisionId, documentId, next, content, kind, message ?? null, authorId, now()),
     db.prepare('UPDATE documents SET current_revision=?, updated_at=? WHERE id=?').bind(next, now(), documentId)
   ])
   return readDocument(db, workspace, documentPath)
@@ -142,9 +140,13 @@ function fromBase64(value: string): Uint8Array { return Uint8Array.from(atob(val
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' } })
+    const authResponse = await handleAuthRequest(request, env)
+    if (authResponse) return authResponse
     const url = new URL(request.url)
     if (url.pathname === '/health') return json({ ok: true, environment: env.PYRO_ENVIRONMENT, authMode: env.PYRO_AUTH_MODE, time: now() })
+    const authenticated = await authenticateRequest(request, env)
+    if (isAuthResponse(authenticated)) return authenticated
     if (url.pathname === '/authors' && request.method === 'GET') {
       const authors = await env.DB.prepare('SELECT id, name, avatar, title, description, links_json as links FROM authors ORDER BY name').all<JsonRecord>()
       return json({ authors: authors.results ?? [] })
@@ -153,7 +155,10 @@ export default {
       const documentPath = normalizePath(url.pathname.slice('/collaboration/'.length))
       const workspace = url.searchParams.get('workspace') || 'default'
       const id = env.COLLABORATION_ROOM.idFromName(idFor(workspace, documentPath))
-      return env.COLLABORATION_ROOM.get(id).fetch(request)
+      const forwarded = new Request(request, { headers: new Headers(request.headers) })
+      forwarded.headers.set('x-pyro-user-id', authenticated.id)
+      forwarded.headers.set('x-pyro-user-name', authenticated.name)
+      return env.COLLABORATION_ROOM.get(id).fetch(forwarded)
     }
     if (url.pathname === '/documents' && request.method === 'GET') {
       const workspace = url.searchParams.get('workspace') || 'default'
@@ -178,7 +183,7 @@ export default {
           const input = await body<{ workspace?: string; content?: string; baseRevision?: number; message?: string }>(request)
           const selectedWorkspace = input.workspace || workspace
           if (typeof input.content !== 'string' || typeof input.baseRevision !== 'number') return error('content and numeric baseRevision are required')
-          const result = await writeDocument(env.DB, selectedWorkspace, documentPath, input.content, input.baseRevision, isDraft ? 'draft' : 'published', input.message)
+          const result = await writeDocument(env.DB, selectedWorkspace, documentPath, input.content, input.baseRevision, isDraft ? 'draft' : 'published', authenticated.id, input.message)
           return result instanceof Response ? result : json(result)
         } catch (cause) { return error(cause instanceof Error ? cause.message : 'Invalid request') }
       }

@@ -18,7 +18,14 @@
     "onCommand:pyroWiki.openPreview",
     "onCommand:pyroWiki.openMarkdownWorkspace",
     "onView:pyroWiki.documents",
-    "onWebviewPanel:pyroWikiPreview"
+    "onWebviewPanel:pyroWikiPreview",
+    "onCommand:pyroWiki.signIn",
+    "onCommand:pyroWiki.signOut",
+    "onCommand:pyroWiki.refreshCloudDocuments",
+    "onCommand:pyroWiki.joinCollaboration",
+    "onCommand:pyroWiki.leaveCollaboration",
+    "onView:pyroWiki.cloudDocuments",
+    "onView:pyroWiki.collaboration"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -87,6 +94,26 @@
         "command": "pyroWiki.refreshDocuments",
         "title": "PYRo Wiki: Refresh Markdown Documents",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "pyroWiki.signIn",
+        "title": "PYRo Wiki: Sign in with Feishu",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "pyroWiki.signOut",
+        "title": "PYRo Wiki: Sign out",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "pyroWiki.refreshCloudDocuments",
+        "title": "PYRo Wiki: Refresh Cloud Documents",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pyroWiki.leaveCollaboration",
+        "title": "PYRo Wiki: Leave Collaboration",
+        "icon": "$(debug-disconnect)"
       }
     ],
     "configuration": {
@@ -115,7 +142,7 @@
         },
         "pyroWiki.apiBaseUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8787",
+          "default": "https://pyro-wiki-api.luckyy.ccwu.cc",
           "description": "PYRo Wiki Worker API base URL."
         },
         "pyroWiki.authorCacheTtlMinutes": {
@@ -172,6 +199,31 @@
           "command": "pyroWiki.searchMarkdownDocuments",
           "when": "view == pyroWiki.documents",
           "group": "navigation@3"
+        },
+        {
+          "command": "pyroWiki.signIn",
+          "when": "view == pyroWiki.cloudDocuments",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pyroWiki.signOut",
+          "when": "view == pyroWiki.cloudDocuments",
+          "group": "navigation@2"
+        },
+        {
+          "command": "pyroWiki.refreshCloudDocuments",
+          "when": "view == pyroWiki.cloudDocuments",
+          "group": "navigation@3"
+        },
+        {
+          "command": "pyroWiki.joinCollaboration",
+          "when": "view == pyroWiki.collaboration",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pyroWiki.leaveCollaboration",
+          "when": "view == pyroWiki.collaboration",
+          "group": "navigation@2"
         }
       ]
     },
@@ -183,6 +235,18 @@
           "name": "Markdown Documents",
           "contextualTitle": "PYRo Wiki Markdown documents",
           "icon": "$(book)"
+        },
+        {
+          "id": "pyroWiki.cloudDocuments",
+          "name": "Cloud Documents",
+          "contextualTitle": "PYRo Wiki cloud documents",
+          "icon": "$(cloud)"
+        },
+        {
+          "id": "pyroWiki.collaboration",
+          "name": "Collaboration",
+          "contextualTitle": "PYRo Wiki collaboration",
+          "icon": "$(broadcast)"
         }
       ]
     },
