@@ -9,6 +9,8 @@ interface PreviewMessage {
   ratio?: number
   pageKey?: string
   hash?: string
+  activeHeading?: string
+  atBottom?: boolean
 }
 
 export class PreviewController implements vscode.Disposable {
@@ -169,8 +171,8 @@ export class PreviewController implements vscode.Disposable {
       const match = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(text)
       if (!match) continue
       const heading = match[1].replace(/[`*_~]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim()
-      const slug = heading.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-').replace(/-+/g, '-')
-      if (slug === target || heading.toLowerCase() === normalizedTarget) return line
+      const slug = heading.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
+      if (slug === target || slug.replace(/-/g, ' ') === normalizedTarget || heading.toLowerCase() === normalizedTarget) return line
     }
     return undefined
   }
@@ -231,7 +233,12 @@ export class PreviewController implements vscode.Disposable {
     const visibleLines = Math.max(1, visible ? visible.end.line - visible.start.line + 1 : 1)
     const maxStart = Math.max(0, editor.document.lineCount - visibleLines)
     const ratio = Math.max(0, Math.min(1, message.ratio))
-    const targetLine = ratio >= 0.999 ? maxStart : Math.round(ratio * maxStart)
+    const headingLine = message.activeHeading ? this.headingLine(editor.document, message.activeHeading) : undefined
+    const targetLine = message.atBottom
+      ? maxStart
+      : headingLine !== undefined
+        ? Math.min(maxStart, headingLine)
+        : (ratio >= 0.999 ? maxStart : Math.round(ratio * maxStart))
     this.suppressSourceScroll = true
     if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
     try {

@@ -26,6 +26,8 @@ describe('full VitePress preview server', () => {
       expect(response.status).toBe(200)
       expect(response.body).toContain('parentWindow.postMessage')
       expect(response.body).toContain('window.scrollTo')
+      expect(response.body).toContain('activeHeading')
+      expect(response.body).toContain('atBottom')
       expect(response.body).toContain('pageKey')
       expect(response.body).toContain('previewNavigate')
       expect(response.body).toContain('popstate')
