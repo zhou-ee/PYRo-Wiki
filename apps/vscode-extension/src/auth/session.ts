@@ -61,11 +61,16 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
     if (uri.path !== '/auth/callback' && !uri.path.endsWith('/auth/callback')) { this.log('ignored URI because callback path did not match'); return }
     const handoff = new URLSearchParams(uri.query).get('handoff')
     if (!handoff) { this.log('callback URI did not include handoff'); void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
+    await this.completeHandoff(handoff)
+  }
+
+  async completeHandoff(handoff: string): Promise<void> {
+    if (!handoff.trim()) { void vscode.window.showErrorMessage('PYRo Wiki handoff code cannot be empty.'); return }
     try {
       const response = await fetch(`${this.apiBaseUrl()}/auth/session/exchange`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handoff })
+        body: JSON.stringify({ handoff: handoff.trim() })
       })
       this.log(`session exchange response=${response.status}`)
       const body = await response.json() as { accessToken?: string; refreshToken?: string; expiresIn?: number; user?: AuthUser; error?: string }

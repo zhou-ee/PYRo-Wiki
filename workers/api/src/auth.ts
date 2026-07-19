@@ -59,6 +59,12 @@ function html(message: string, status = 200): Response {
   })
 }
 
+function handoffPage(returnUrl: string, handoff: string): Response {
+  const safeUrl = returnUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  const safeCode = handoff.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character)
+  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"><title>Return to VS Code</title></head><body><h1>Returning to VS Code...</h1><p>If VS Code did not open automatically, click <a href="${safeUrl}">Return to VS Code</a>.</p><p>Fallback handoff code:</p><pre>${safeCode}</pre><p>Use <b>PYRo Wiki: Complete Feishu Login</b> in VS Code if needed.</p></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8' } })
+}
+
 function nowSeconds(): number { return Math.floor(Date.now() / 1000) }
 function isoAfter(seconds: number): string { return new Date(Date.now() + seconds * 1000).toISOString() }
 function isExpired(value: string): boolean { return Date.parse(value) <= Date.now() }
@@ -200,7 +206,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
       await env.DB.prepare('INSERT INTO auth_handoff_codes (code_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await sha256(handoff), userId, isoAfter(HANDOFF_TTL_SECONDS), new Date().toISOString()).run()
       const returnUrl = new URL(VSCODE_CALLBACK)
       returnUrl.searchParams.set('handoff', handoff)
-      return Response.redirect(returnUrl.toString(), 302)
+      return handoffPage(returnUrl.toString(), handoff)
     } catch (error) {
       return html(error instanceof Error ? error.message : 'Feishu login failed.', 502)
     }

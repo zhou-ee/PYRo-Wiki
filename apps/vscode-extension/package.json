@@ -28,7 +28,8 @@
     "onView:pyroWiki.collaboration",
     "onUri",
     "onCommand:pyroWiki.viewCloudRevisions",
-    "onCommand:pyroWiki.compareCloudDocument"
+    "onCommand:pyroWiki.compareCloudDocument",
+    "onCommand:pyroWiki.completeFeishuLogin"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -127,6 +128,11 @@
         "command": "pyroWiki.compareCloudDocument",
         "title": "PYRo Wiki: Compare Cloud Document",
         "icon": "$(compare-changes)"
+      },
+      {
+        "command": "pyroWiki.completeFeishuLogin",
+        "title": "PYRo Wiki: Complete Feishu Login",
+        "icon": "$(key)"
       }
     ],
     "configuration": {

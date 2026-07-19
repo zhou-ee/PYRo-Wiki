@@ -62,6 +62,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.refreshDocuments', () => markdownDocuments.refresh()),
     vscode.commands.registerCommand('pyroWiki.signIn', () => auth.signIn()),
     vscode.commands.registerCommand('pyroWiki.signOut', () => auth.signOut()),
+    vscode.commands.registerCommand('pyroWiki.completeFeishuLogin', async () => {
+      const handoff = await vscode.window.showInputBox({ prompt: 'Paste the Feishu fallback handoff code', password: true, ignoreFocusOut: true })
+      if (handoff) await auth.completeHandoff(handoff)
+    }),
     vscode.commands.registerCommand('pyroWiki.refreshCloudDocuments', () => cloudDocuments.load()),
     vscode.commands.registerCommand('pyroWiki.openCloudDocument', (document) => cloudDocuments.openDocument(document)),
     vscode.commands.registerCommand('pyroWiki.viewCloudRevisions', (document) => cloudDocuments.showRevisions(document)),
