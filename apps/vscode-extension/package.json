@@ -24,27 +24,33 @@
     "commands": [
       {
         "command": "pyroWiki.selectWikiRoot",
-        "title": "PYRo Wiki: Select Wiki Root"
+        "title": "PYRo Wiki: Select Wiki Root",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "pyroWiki.openPreview",
-        "title": "PYRo Wiki: Open Preview"
+        "title": "PYRo Wiki: Open Preview",
+        "icon": "$(open-preview)"
       },
       {
         "command": "pyroWiki.pullDocument",
-        "title": "PYRo Wiki: Pull Document"
+        "title": "PYRo Wiki: Pull Document",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "pyroWiki.pushDocument",
-        "title": "PYRo Wiki: Push Document"
+        "title": "PYRo Wiki: Push Document",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "pyroWiki.resolveConflict",
-        "title": "PYRo Wiki: Resolve Conflict"
+        "title": "PYRo Wiki: Resolve Conflict",
+        "icon": "$(diff)"
       },
       {
         "command": "pyroWiki.joinCollaboration",
-        "title": "PYRo Wiki: Join Collaboration"
+        "title": "PYRo Wiki: Join Collaboration",
+        "icon": "$(broadcast)"
       },
       {
         "command": "pyroWiki.openSourceAndPreview",
@@ -53,7 +59,8 @@
       },
       {
         "command": "pyroWiki.refreshPreview",
-        "title": "PYRo Wiki: Refresh Preview"
+        "title": "PYRo Wiki: Refresh Preview",
+        "icon": "$(refresh)"
       },
       {
         "command": "pyroWiki.pullRepository",
@@ -62,19 +69,23 @@
       },
       {
         "command": "pyroWiki.repositoryStatus",
-        "title": "PYRo Wiki: Show Repository Status"
+        "title": "PYRo Wiki: Show Repository Status",
+        "icon": "$(info)"
       },
       {
         "command": "pyroWiki.openMarkdownWorkspace",
-        "title": "PYRo Wiki: Show Markdown Workspace"
+        "title": "PYRo Wiki: Show Markdown Workspace",
+        "icon": "$(book)"
       },
       {
         "command": "pyroWiki.searchMarkdownDocuments",
-        "title": "PYRo Wiki: Search Markdown Documents"
+        "title": "PYRo Wiki: Search Markdown Documents",
+        "icon": "$(search)"
       },
       {
         "command": "pyroWiki.refreshDocuments",
-        "title": "PYRo Wiki: Refresh Markdown Documents"
+        "title": "PYRo Wiki: Refresh Markdown Documents",
+        "icon": "$(refresh)"
       }
     ],
     "configuration": {
