@@ -72,6 +72,7 @@ export class CollaborationRoom {
   private readonly doc = new Y.Doc()
   private loaded = false
   private loading: Promise<void> | undefined
+  private readonly socketUsers = new Map<WebSocket, string>()
 
   constructor(private readonly state: DurableObjectState, _env: Env) {}
 
@@ -99,10 +100,14 @@ export class CollaborationRoom {
   private handleMessage(server: WebSocket, raw: string | ArrayBuffer): void {
     try {
       const message = JSON.parse(typeof raw === 'string' ? raw : new TextDecoder().decode(raw)) as JsonRecord
-      if (message.type === 'hello') {
+      if (message.type === 'ping') {
+        server.send(JSON.stringify({ type: 'pong' }))
+      } else if (message.type === 'hello') {
         if (typeof message.state === 'string') Y.applyUpdate(this.doc, fromBase64(message.state))
+        this.persist()
+        const user = this.socketUsers.get(server) ?? 'anonymous'
         server.send(JSON.stringify({ type: 'sync', update: toBase64(Y.encodeStateAsUpdate(this.doc)) }))
-        this.broadcast({ type: 'awareness', user: message.user ?? 'anonymous', status: 'online' }, server)
+        this.broadcast({ type: 'awareness', user, status: 'online' }, server)
       } else if (message.type === 'update' && typeof message.update === 'string') {
         const update = fromBase64(message.update)
         Y.applyUpdate(this.doc, update)
@@ -115,9 +120,13 @@ export class CollaborationRoom {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade') !== 'websocket') return json({ error: 'WebSocket upgrade required' }, 426)
+    const userId = request.headers.get('x-pyro-user-id')
+    const userName = request.headers.get('x-pyro-user-name')
+    if (!userId || !userName) return json({ error: 'Collaboration authentication required' }, 401)
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
+    this.socketUsers.set(server, userName)
     this.state.acceptWebSocket(server)
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -127,7 +136,9 @@ export class CollaborationRoom {
   }
 
   webSocketClose(server: WebSocket): void {
-    this.broadcast({ type: 'awareness', status: 'offline' }, server)
+    const user = this.socketUsers.get(server)
+    this.socketUsers.delete(server)
+    this.broadcast({ type: 'awareness', user, status: 'offline' }, server)
   }
 
   webSocketError(server: WebSocket): void {

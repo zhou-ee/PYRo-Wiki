@@ -31,7 +31,8 @@
     "onCommand:pyroWiki.compareCloudDocument",
     "onCommand:pyroWiki.completeFeishuLogin",
     "onCommand:pyroWiki.saveDraft",
-    "onCommand:pyroWiki.viewRevisions"
+    "onCommand:pyroWiki.viewRevisions",
+    "onCommand:pyroWiki.retrySyncQueue"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -145,6 +146,11 @@
         "command": "pyroWiki.viewRevisions",
         "title": "PYRo Wiki: View Current Revisions",
         "icon": "$(history)"
+      },
+      {
+        "command": "pyroWiki.retrySyncQueue",
+        "title": "PYRo Wiki: Retry Sync Queue",
+        "icon": "$(sync)"
       }
     ],
     "configuration": {
@@ -228,6 +234,11 @@
           "command": "pyroWiki.viewRevisions",
           "when": "editorLangId == markdown",
           "group": "navigation@14"
+        },
+        {
+          "command": "pyroWiki.retrySyncQueue",
+          "when": "editorLangId == markdown",
+          "group": "navigation@15"
         }
       ],
       "view/title": [
