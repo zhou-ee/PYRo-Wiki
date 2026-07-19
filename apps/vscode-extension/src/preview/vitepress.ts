@@ -63,26 +63,30 @@ function bridgeScript(): string {
 var parentWindow=window.parent;
 var pageKey=location.pathname;
 var storageKey=function(){return 'pyroWikiScroll:'+location.pathname};
-var scrollCandidates=function(){var result=[document.scrollingElement,document.documentElement,document.body];document.querySelectorAll('.VPApp,.VPContent,.VPDoc,main').forEach(function(element){result.push(element)});return result.filter(function(element,index){return element&&result.indexOf(element)===index})};
-var frameState=function(){var root=document.documentElement;var body=document.body;var viewport=Math.max(1,window.innerHeight||root.clientHeight);var top=Math.max(window.scrollY||0,root.scrollTop||0,body&&body.scrollTop||0);var max=Math.max(0,Math.max(root.scrollHeight,body?body.scrollHeight:0)-viewport);scrollCandidates().forEach(function(element){var elementViewport=element===body?viewport:Math.max(1,element.clientHeight||viewport);var elementMax=Math.max(0,(element.scrollHeight||0)-elementViewport);var elementTop=element.scrollTop||0;if(elementMax>max||elementTop>top){max=Math.max(max,elementMax);top=Math.max(top,elementTop)}});return {top:top,max:max,ratio:max===0?0:Math.max(0,Math.min(1,top/max)),atBottom:max===0||top>=max-16}};
-var ratio=function(){return frameState().ratio};
+var candidateCache=[];
+var headingCache=[];
+var scrollCandidates=function(){return candidateCache};
+var frameState=function(){var root=document.documentElement;var body=document.body;var viewport=Math.max(1,window.innerHeight||root.clientHeight);var top=Math.max(window.scrollY||0,root.scrollTop||0,body&&body.scrollTop||0);var max=Math.max(0,Math.max(root.scrollHeight,body?body.scrollHeight:0)-viewport);scrollCandidates().forEach(function(element){var elementViewport=element===body?viewport:Math.max(1,element.clientHeight||viewport);var elementMax=Math.max(0,(element.scrollHeight||0)-elementViewport);var elementTop=element.scrollTop||0;if(elementMax>max||elementTop>top){max=Math.max(max,elementMax);top=Math.max(top,elementTop)}});var boundedRatio=max===0?0:Math.max(0,Math.min(1,top/max));return {top:top,max:max,ratio:boundedRatio,atBottom:max===0||top>=max-16}};
 var applyRatio=function(value){var state=frameState();var top=Math.max(0,Math.min(1,Number(value)||0))*state.max;window.scrollTo(0,top);scrollCandidates().forEach(function(element){try{element.scrollTop=top}catch(_error){}})};
 var restore=function(){var saved=sessionStorage.getItem(storageKey());if(saved!==null){sessionStorage.removeItem(storageKey());window.requestAnimationFrame(function(){window.requestAnimationFrame(function(){applyRatio(saved)})})}};
-var headingState=function(){var state=frameState();var cutoff=state.top+Math.max(24,window.innerHeight*0.35);var active='';document.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]').forEach(function(heading){if(heading.getBoundingClientRect().top+(window.scrollY||0)<=cutoff)active=heading.id});return {active:active,atBottom:state.atBottom}};
+var headingState=function(){var state=frameState();var cutoff=state.top+Math.max(24,window.innerHeight*0.35);var active='';headingCache.forEach(function(heading){if(heading.getBoundingClientRect().top+(window.scrollY||0)<=cutoff)active=heading.id});return {ratio:state.ratio,active:active,atBottom:state.atBottom}};
 var lastNavigation=location.pathname+location.hash;
 var publishNavigation=function(force){var next=location.pathname+location.hash;if(!force&&next===lastNavigation)return;lastNavigation=next;pageKey=location.pathname;parentWindow.postMessage({type:'previewNavigate',pageKey:pageKey,hash:location.hash||''},'*')};
 var isInternalRoute=function(url){if(url.origin!==location.origin)return false;var last=url.pathname.split('/').pop()||'';return url.pathname==='/'||url.pathname.endsWith('/')||url.pathname.endsWith('.html')||url.pathname.endsWith('.htm')||!last.includes('.')};
-var programmatic=false;var raf=0;
-var publishScroll=function(){if(programmatic||raf)return;raf=window.requestAnimationFrame(function(){raf=0;if(!programmatic){var state=headingState();parentWindow.postMessage({type:'previewScroll',ratio:ratio(),pageKey:pageKey,activeHeading:state.active,atBottom:state.atBottom},'*')}})};
+var programmatic=false;var raf=0;var lastScrollPost=0;
+var publishScroll=function(){if(programmatic||raf)return;raf=window.requestAnimationFrame(function(){raf=0;if(!programmatic){var now=Date.now();if(now-lastScrollPost<50)return;lastScrollPost=now;var state=headingState();parentWindow.postMessage({type:'previewScroll',ratio:state.ratio,pageKey:pageKey,activeHeading:state.active,atBottom:state.atBottom},'*')}})};
 var attachScrollListeners=function(){scrollCandidates().forEach(function(element){if(!element.__pyroScrollBound){element.__pyroScrollBound=true;element.addEventListener('scroll',publishScroll,{passive:true})}})};
+var refreshDomCache=function(){var result=[document.scrollingElement,document.documentElement,document.body];document.querySelectorAll('.VPApp,.VPContent,.VPDoc,main').forEach(function(element){result.push(element)});candidateCache=result.filter(function(element,index){return element&&result.indexOf(element)===index});headingCache=Array.prototype.slice.call(document.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]'));attachScrollListeners()};
+var cacheRefreshRaf=0;var scheduleDomCacheRefresh=function(){if(cacheRefreshRaf)return;cacheRefreshRaf=window.requestAnimationFrame(function(){cacheRefreshRaf=0;refreshDomCache()})};
+var scheduleNavigation=function(){window.setTimeout(function(){publishNavigation(true)},0)};
+['pushState','replaceState'].forEach(function(method){var original=history[method];history[method]=function(){var result=original.apply(this,arguments);scheduleNavigation();return result}});
 window.addEventListener('scroll',publishScroll,{passive:true});
 window.addEventListener('message',function(event){if(event.data&&event.data.type==='sourceScroll'){programmatic=true;applyRatio(event.data.ratio);window.setTimeout(function(){programmatic=false},250)}});
-document.addEventListener('click',function(event){var target=event.target instanceof Element?event.target.closest('a[href]'):null;if(!target||target.target==='_blank'||event.defaultPrevented)return;var href=target.getAttribute('href');if(!href)return;var url;try{url=new URL(href,location.href)}catch(_error){return}if(isInternalRoute(url))window.setTimeout(function(){publishNavigation(true)},0)},true);
-window.addEventListener('popstate',function(){publishNavigation(true)});
-window.setInterval(function(){publishNavigation(false)},120);
-window.addEventListener('beforeunload',function(){sessionStorage.setItem(storageKey(),String(ratio()))});
-window.addEventListener('load',function(){attachScrollListeners();restore();parentWindow.postMessage({type:'previewReady',pageKey:pageKey},'*')});
-new MutationObserver(attachScrollListeners).observe(document.documentElement,{childList:true,subtree:true});
+document.addEventListener('click',function(event){var target=event.target instanceof Element?event.target.closest('a[href]'):null;if(!target||target.target==='_blank'||event.defaultPrevented)return;var href=target.getAttribute('href');if(!href)return;var url;try{url=new URL(href,location.href)}catch(_error){return}if(isInternalRoute(url))scheduleNavigation()},true);
+window.addEventListener('popstate',function(){publishNavigation(true)});window.addEventListener('hashchange',function(){publishNavigation(true)});
+window.addEventListener('beforeunload',function(){sessionStorage.setItem(storageKey(),String(frameState().ratio))});
+window.addEventListener('load',function(){refreshDomCache();restore();parentWindow.postMessage({type:'previewReady',pageKey:pageKey},'*')});
+new MutationObserver(scheduleDomCacheRefresh).observe(document.documentElement,{childList:true,subtree:true});
 })();</script>`
 }
 

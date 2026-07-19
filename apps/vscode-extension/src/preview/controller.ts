@@ -40,6 +40,7 @@ export class PreviewController implements vscode.Disposable {
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (this.panel && editor?.document) void this.followEditor(editor)
+        else if (editor?.document?.languageId === 'markdown') void this.warmup(editor.document)
       }),
       vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
         if (this.panel && this.currentDocument && event.textEditor.document.uri.toString() === this.currentDocument.uri.toString()) this.sendSourceScroll(event.textEditor)
