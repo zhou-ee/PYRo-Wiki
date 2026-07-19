@@ -13,6 +13,10 @@ interface PreviewMessage {
   atBottom?: boolean
 }
 
+interface PersistedPreviewState {
+  documentUri: string
+}
+
 export class PreviewController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined
   private readonly disposables: vscode.Disposable[] = []
@@ -25,6 +29,7 @@ export class PreviewController implements vscode.Disposable {
   private renderGeneration = 0
   private renderQueue: Promise<void> = Promise.resolve()
   private readonly vitePress = new VitePressPreviewServer()
+  private readonly previewStateKey = 'pyroWiki.previewState'
   private webviewInitialized = false
   private currentPreviewUrl: string | undefined
 
@@ -41,6 +46,9 @@ export class PreviewController implements vscode.Disposable {
       }),
       vscode.window.onDidChangeActiveColorTheme(() => {
         if (this.panel && this.currentDocument) void this.queueRender(this.currentDocument, true)
+      }),
+      vscode.window.registerWebviewPanelSerializer('pyroWikiPreview', {
+        deserializeWebviewPanel: async (panel, state) => this.restorePanel(panel, state)
       })
     )
   }
@@ -55,6 +63,68 @@ export class PreviewController implements vscode.Disposable {
 
   private get syncUnsavedPreview(): boolean {
     return vscode.workspace.getConfiguration('pyroWiki').get<boolean>('syncUnsavedPreview', true)
+  }
+
+  private attachPanel(panel: vscode.WebviewPanel): void {
+    this.panel = panel
+    this.webviewInitialized = false
+    this.currentPreviewUrl = undefined
+    panel.webview.options = { enableScripts: true }
+    panel.webview.html = this.vitePress.loadingDocument(panel.webview.cspSource)
+    this.disposables.push(panel.webview.onDidReceiveMessage((message) => this.handleWebviewMessage(message)))
+    panel.onDidDispose(() => {
+      if (this.panel !== panel) return
+      this.panel = undefined
+      this.currentDocument = undefined
+      this.sourceEditor = undefined
+      this.currentPreviewUrl = undefined
+      this.webviewInitialized = false
+      void this.context.workspaceState.update(this.previewStateKey, undefined)
+      if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
+      if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
+      void this.vitePress.disposeAsync()
+    }, null, this.disposables)
+  }
+
+  private async restorePanel(panel: vscode.WebviewPanel, state: unknown): Promise<void> {
+    this.attachPanel(panel)
+    const stateDocumentUri = typeof state === 'object' && state !== null && 'documentUri' in state
+      ? (state as { documentUri?: unknown }).documentUri
+      : undefined
+    const persisted = this.context.workspaceState.get<PersistedPreviewState>(this.previewStateKey)
+    const documentUri = typeof stateDocumentUri === 'string'
+      ? stateDocumentUri
+      : persisted?.documentUri
+    if (!documentUri) return
+
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(documentUri))
+      if (!isWikiDocument(document)) throw new Error('The restored Markdown document is outside the configured PYRo Wiki root.')
+      const editor = await this.showSourceLeft(document, true)
+      await this.setDocument(document, editor)
+      panel.reveal(vscode.ViewColumn.Two, true)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      await this.context.workspaceState.update(this.previewStateKey, undefined)
+      panel.webview.html = `<!doctype html><html><body><h2>PYRo Wiki preview could not be restored</h2><pre>${escapeHtml(detail)}</pre></body></html>`
+      void vscode.window.showWarningMessage(`PYRo Wiki preview could not be restored: ${detail}`)
+    }
+  }
+
+  private async persistPreviewState(document: vscode.TextDocument): Promise<void> {
+    await this.context.workspaceState.update(this.previewStateKey, { documentUri: document.uri.toString() } satisfies PersistedPreviewState)
+  }
+
+  /** Start VitePress before the user opens the panel when a Markdown editor is already active. */
+  async warmup(document = vscode.window.activeTextEditor?.document): Promise<void> {
+    if (!document || !isWikiDocument(document)) return
+    const root = configuredWikiRoot(document)
+    if (!root) return
+    try {
+      await this.vitePress.start(root)
+    } catch {
+      // Keep warmup best-effort. The normal render path reports actionable errors.
+    }
   }
 
   private async showSourceLeft(document: vscode.TextDocument, preserveFocus: boolean): Promise<vscode.TextEditor> {
@@ -109,6 +179,9 @@ export class PreviewController implements vscode.Disposable {
   private async setDocument(document: vscode.TextDocument, editor?: vscode.TextEditor): Promise<void> {
     this.currentDocument = document
     this.sourceEditor = editor ?? this.sourceEditor
+    // Persist before starting the potentially slow server so an immediate
+    // window reload can still recover the document being previewed.
+    void this.persistPreviewState(document)
     await this.queueRender(document)
     if (this.sourceEditor) this.sendSourceScroll(this.sourceEditor)
   }
@@ -258,21 +331,11 @@ export class PreviewController implements vscode.Disposable {
     }
     const sourceEditor = await this.showSourceLeft(document, false)
     if (!this.panel) {
-      this.panel = vscode.window.createWebviewPanel('pyroWikiPreview', 'PYRo Wiki Preview', vscode.ViewColumn.Two, { enableScripts: true, retainContextWhenHidden: true })
-      this.disposables.push(this.panel.webview.onDidReceiveMessage((message) => this.handleWebviewMessage(message)))
-      this.panel.onDidDispose(() => {
-        this.panel = undefined
-        this.currentDocument = undefined
-        this.sourceEditor = undefined
-        this.currentPreviewUrl = undefined
-        this.webviewInitialized = false
-        if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
-        if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
-        void this.vitePress.disposeAsync()
-      }, null, this.disposables)
+      const panel = vscode.window.createWebviewPanel('pyroWikiPreview', 'PYRo Wiki Preview', vscode.ViewColumn.Two, { enableScripts: true, retainContextWhenHidden: true })
+      this.attachPanel(panel)
     }
     await this.setDocument(sourceEditor.document, sourceEditor)
-    this.panel.reveal(vscode.ViewColumn.Two, true)
+    this.panel?.reveal(vscode.ViewColumn.Two, true)
   }
 
   async refresh(): Promise<void> {
@@ -290,7 +353,6 @@ export class PreviewController implements vscode.Disposable {
       if (this.syncUnsavedPreview && document.isDirty) {
         const saved = await document.save()
         if (!saved) throw new Error('The Markdown file could not be saved before preview synchronization.')
-        await new Promise((resolve) => setTimeout(resolve, 120))
       }
       if (generation !== this.renderGeneration || !this.panel) return
       await this.vitePress.start(root)
@@ -299,13 +361,14 @@ export class PreviewController implements vscode.Disposable {
       this.currentDocument = document
       this.panel.title = `PYRo Wiki: ${document.fileName.split(/[\\/]/).pop() ?? 'Preview'}`
       if (!this.webviewInitialized) {
-        this.panel.webview.html = this.vitePress.document(url, this.panel.webview.cspSource)
+        this.panel.webview.html = this.vitePress.document(url, this.panel.webview.cspSource, document.uri.toString())
         this.webviewInitialized = true
       } else {
         if (url !== this.currentPreviewUrl) await this.panel.webview.postMessage({ type: 'navigatePreview', url })
         else if (reload) await this.panel.webview.postMessage({ type: 'navigatePreview', url: `${url}?pyroWikiReload=${document.version}-${Date.now()}` })
       }
       this.currentPreviewUrl = url
+      await this.persistPreviewState(document)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (!this.panel) return
@@ -316,7 +379,9 @@ export class PreviewController implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.panel?.dispose()
+    // Do not dispose the panel here: VS Code can serialize and restore it during
+    // an extension host/window reload. The serializer rebinds the restored panel
+    // to the new controller and replaces its iframe with a fresh local URL.
     if (this.pendingRenderTimer) clearTimeout(this.pendingRenderTimer)
     if (this.suppressSourceScrollTimer) clearTimeout(this.suppressSourceScrollTimer)
     this.vitePress.dispose()

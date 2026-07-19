@@ -17,7 +17,8 @@
     "onCommand:pyroWiki.selectWikiRoot",
     "onCommand:pyroWiki.openPreview",
     "onCommand:pyroWiki.openMarkdownWorkspace",
-    "onView:pyroWiki.documents"
+    "onView:pyroWiki.documents",
+    "onWebviewPanel:pyroWikiPreview"
   ],
   "main": "./dist/extension.js",
   "contributes": {

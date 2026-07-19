@@ -1,4 +1,4 @@
-import * as childProcess from 'node:child_process'
+﻿import * as childProcess from 'node:child_process'
 import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as net from 'node:net'
@@ -43,7 +43,7 @@ async function waitForHttp(port: number, timeoutMs = 30_000): Promise<void> {
   while (Date.now() - startedAt < timeoutMs) {
     try {
       await new Promise<void>((resolve, reject) => {
-        const request = http.get({ hostname: '127.0.0.1', port, path: '/', timeout: 1_000 }, (response) => {
+        const request = http.get({ hostname: '127.0.0.1', port, path: '/', timeout: 500 }, (response) => {
           response.resume()
           response.statusCode && response.statusCode < 500 ? resolve() : reject(new Error(`HTTP ${response.statusCode}`))
         })
@@ -52,7 +52,7 @@ async function waitForHttp(port: number, timeoutMs = 30_000): Promise<void> {
       })
       return
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 150))
+      await new Promise((resolve) => setTimeout(resolve, 50))
     }
   }
   throw new Error('VitePress preview server did not become ready in time.')
@@ -86,11 +86,17 @@ new MutationObserver(attachScrollListeners).observe(document.documentElement,{ch
 })();</script>`
 }
 
-function webviewDocument(url: string, cspSource: string): string {
+function webviewDocument(url: string, cspSource: string, documentUri?: string): string {
   const escapedUrl = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
   const nonce = Math.random().toString(36).slice(2)
-  const script = `const vscode=acquireVsCodeApi();const frame=document.getElementById('vitepress-frame');let pendingSourceScroll=null;window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data){if(event.data.type==='previewReady'&&pendingSourceScroll){frame.contentWindow.postMessage(pendingSourceScroll,'*');pendingSourceScroll=null}vscode.postMessage(event.data);return}if(event.data?.type==='sourceScroll'){pendingSourceScroll=event.data;frame.contentWindow?.postMessage(event.data,'*')}if(event.data?.type==='navigatePreview'){frame.src=event.data.url}});`
-  return `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src http://127.0.0.1:*; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#1b1b1f}#vitepress-frame{display:block;width:100%;height:100%;border:0;background:transparent}</style></head><body><iframe id="vitepress-frame" title="PYRo Wiki VitePress Preview" src="${escapedUrl}"></iframe><script nonce="${nonce}">${script}</script></body></html>`.replace('<meta charset="UTF-8">', `<meta charset="UTF-8"><meta name="vscode-webview-resource-origin" content="${cspSource}">`)
+  const serializedState = JSON.stringify(documentUri ? { documentUri } : {}).replace(/</g, '\\u003c')
+  const script = `const vscode=acquireVsCodeApi();const frame=document.getElementById('vitepress-frame');const initialState=${serializedState};if(initialState.documentUri)vscode.setState(Object.assign({},vscode.getState()||{},initialState));let pendingSourceScroll=null;window.addEventListener('message',event=>{if(event.source===frame.contentWindow&&event.data){if(event.data.type==='previewReady'&&pendingSourceScroll){frame.contentWindow.postMessage(pendingSourceScroll,'*');pendingSourceScroll=null}vscode.postMessage(event.data);return}if(event.data?.type==='sourceScroll'){pendingSourceScroll=event.data;frame.contentWindow?.postMessage(event.data,'*')}if(event.data?.type==='navigatePreview'){frame.src=event.data.url;vscode.setState(Object.assign({},vscode.getState()||{},{previewUrl:event.data.url}))}});`
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src http://127.0.0.1:*; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#1b1b1f}#vitepress-frame{display:block;width:100%;height:100%;border:0;background:transparent}</style></head><body><iframe id="vitepress-frame" title="PYRo Wiki VitePress Preview" loading="eager" src="${escapedUrl}"></iframe><script nonce="${nonce}">${script}</script></body></html>`.replace('<meta charset="UTF-8">', `<meta charset="UTF-8"><meta name="vscode-webview-resource-origin" content="${cspSource}">`)
+}
+
+function loadingDocument(cspSource: string): string {
+  const nonce = Math.random().toString(36).slice(2)
+  return `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"><meta name="vscode-webview-resource-origin" content="${cspSource}"><style>html,body{width:100%;height:100%;margin:0;background:#1b1b1f;color:#c9c9d1;font:13px system-ui,sans-serif}body{display:grid;place-items:center}.loading{display:flex;align-items:center;gap:10px;opacity:.8}.spinner{width:14px;height:14px;border:2px solid #555;border-top-color:#8ab4f8;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="loading"><span class="spinner"></span><span>Starting PYRo Wiki preview...</span></div><script nonce="${nonce}">void 0</script></body></html>`
 }
 
 export class VitePressPreviewServer implements Disposable {
@@ -113,15 +119,26 @@ export class VitePressPreviewServer implements Disposable {
 
   async start(workspaceRoot: string): Promise<void> {
     if (this.ready && this.workspaceRoot === workspaceRoot) return
-    await this.disposeAsync()
-    this.starting = this.startInternal(workspaceRoot)
+    if (this.starting) {
+      const starting = this.starting
+      try {
+        await starting
+      } catch {
+        // The caller below will retry and report a fresh startup error.
+      }
+      if (this.ready && this.workspaceRoot === workspaceRoot) return
+    }
+    if (this.ready && this.workspaceRoot !== workspaceRoot) await this.disposeAsync()
+
+    const starting = this.startInternal(workspaceRoot)
+    this.starting = starting
     try {
-      await this.starting
+      await starting
     } catch (error) {
       await this.disposeAsync()
       throw error
     } finally {
-      this.starting = undefined
+      if (this.starting === starting) this.starting = undefined
     }
   }
 
@@ -237,8 +254,12 @@ export class VitePressPreviewServer implements Disposable {
     return `http://127.0.0.1:${this.proxyPort}/${route}`
   }
 
-  document(url: string, cspSource: string): string {
-    return webviewDocument(url, cspSource)
+  document(url: string, cspSource: string, documentUri?: string): string {
+    return webviewDocument(url, cspSource, documentUri)
+  }
+
+  loadingDocument(cspSource: string): string {
+    return loadingDocument(cspSource)
   }
 
   async disposeAsync(): Promise<void> {

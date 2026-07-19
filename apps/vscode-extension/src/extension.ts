@@ -50,7 +50,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (editor?.document.languageId === 'markdown') await members()
     }),
   )
-  if (vscode.window.activeTextEditor?.document.languageId === 'markdown') await members()
+  const activeDocument = vscode.window.activeTextEditor?.document
+  if (activeDocument?.languageId === 'markdown') {
+    // Start VitePress in the background while activation finishes so the first
+    // preview command can reuse the already-warm dev server.
+    void preview.warmup(activeDocument)
+    await members()
+  }
 
 }
 
