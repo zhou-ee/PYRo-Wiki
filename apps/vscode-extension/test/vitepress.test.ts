@@ -27,6 +27,8 @@ describe('full VitePress preview server', () => {
       expect(response.body).toContain('parentWindow.postMessage')
       expect(response.body).toContain('window.scrollTo')
       expect(response.body).toContain('pageKey')
+      expect(response.body).toContain('previewNavigate')
+      expect(response.body).toContain('popstate')
       expect(response.body).toContain('/@vite/client')
       expect(response.body).not.toContain('Unsupported component')
       const shell = server.document(url, 'vscode-webview://test')

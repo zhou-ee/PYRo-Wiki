@@ -1,4 +1,6 @@
 ﻿import * as vscode from 'vscode'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { VitePressPreviewServer } from './vitepress'
 import { configuredWikiRoot, isWikiDocument } from '../workspace'
 
@@ -6,6 +8,7 @@ interface PreviewMessage {
   type?: string
   ratio?: number
   pageKey?: string
+  hash?: string
 }
 
 export class PreviewController implements vscode.Disposable {
@@ -135,6 +138,64 @@ export class PreviewController implements vscode.Disposable {
     return !message.pageKey || !currentPage || message.pageKey === currentPage
   }
 
+  private documentForPageKey(pageKey: string, root: string): vscode.Uri | undefined {
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(pageKey.split('?')[0])
+    } catch {
+      return undefined
+    }
+    const relativeStem = decoded.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.(?:html?|md)$/i, '')
+    const candidates = relativeStem
+      ? [path.join(root, `${relativeStem}.md`), path.join(root, relativeStem, 'index.md')]
+      : [path.join(root, 'index.md')]
+    for (const candidate of candidates) {
+      const absolute = path.resolve(candidate)
+      const relative = path.relative(root, absolute)
+      if (relative.startsWith('..') || path.isAbsolute(relative)) continue
+      if (fs.existsSync(absolute)) return vscode.Uri.file(absolute)
+    }
+    return undefined
+  }
+
+  private headingLine(document: vscode.TextDocument, hash: string): number | undefined {
+    const target = decodeURIComponent(hash.replace(/^#/, '')).trim().toLowerCase()
+    if (!target) return undefined
+    const normalizedTarget = target.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+    for (let line = 0; line < document.lineCount; line += 1) {
+      const text = document.lineAt(line).text
+      const match = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(text)
+      if (!match) continue
+      const heading = match[1].replace(/[`*_~]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim()
+      const slug = heading.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+      if (slug === target || heading.toLowerCase() === normalizedTarget) return line
+    }
+    return undefined
+  }
+
+  private async handlePreviewNavigate(message: PreviewMessage): Promise<void> {
+    if (!message.pageKey || !this.currentDocument) return
+    const root = configuredWikiRoot(this.currentDocument)
+    if (!root) return
+    const targetUri = this.documentForPageKey(message.pageKey, root)
+    if (!targetUri) return
+    try {
+      const targetDocument = await vscode.workspace.openTextDocument(targetUri)
+      const sameDocument = targetDocument.uri.toString() === this.currentDocument.uri.toString()
+      const editor = sameDocument && this.sourceEditor ? this.sourceEditor : await this.showSourceLeft(targetDocument, true)
+      await this.setDocument(targetDocument, editor)
+      if (message.hash) {
+        const line = this.headingLine(targetDocument, message.hash)
+        if (line !== undefined) {
+          editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.AtTop)
+        }
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      void vscode.window.showWarningMessage(`Could not open the Markdown document for this preview link: ${detail}`)
+    }
+  }
+
   private sendSourceScroll(editor: vscode.TextEditor): void {
     if (!this.panel || this.suppressSourceScroll || !this.currentDocument || editor.document.uri.toString() !== this.currentDocument.uri.toString()) return
     const visible = editor.visibleRanges[0]
@@ -154,6 +215,10 @@ export class PreviewController implements vscode.Disposable {
   }
 
   private async handleWebviewMessage(message: PreviewMessage): Promise<void> {
+    if (message.type === 'previewNavigate') {
+      await this.handlePreviewNavigate(message)
+      return
+    }
     if (message.type === 'previewReady') {
       if (this.isCurrentPage(message) && this.sourceEditor) this.sendSourceScroll(this.sourceEditor)
       return
