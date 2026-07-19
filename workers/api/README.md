@@ -38,3 +38,11 @@ npm run smoke:local-api
 ```
 
 This starts the development Worker with local D1 persistence, applies migrations to an isolated `.wrangler/smoke-local` directory, and verifies document creation, pull, revision history, drafts, and stale-revision conflicts.
+
+The local collaboration protocol can be checked with:
+
+```powershell
+npm run smoke:local-collaboration
+```
+
+This opens two local WebSocket clients and verifies initial Yjs sync, incremental updates, connection-scoped Presence, and offline Presence events.
