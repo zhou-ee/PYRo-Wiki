@@ -145,10 +145,12 @@ export class PreviewController implements vscode.Disposable {
     } catch {
       return undefined
     }
-    const relativeStem = decoded.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.(?:html?|md)$/i, '')
-    const candidates = relativeStem
-      ? [path.join(root, `${relativeStem}.md`), path.join(root, relativeStem, 'index.md')]
-      : [path.join(root, 'index.md')]
+    const routePath = decoded.split('#')[0].split('?')[0]
+    const relativeStem = routePath.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.(?:html?|md)$/i, '')
+    const stems = relativeStem.endsWith('/index') ? [relativeStem, relativeStem.slice(0, -('/index'.length))] : [relativeStem]
+    const candidates = stems.flatMap((stem) => stem
+      ? [path.join(root, `${stem}.md`), path.join(root, stem, 'index.md')]
+      : [path.join(root, 'index.md')])
     for (const candidate of candidates) {
       const absolute = path.resolve(candidate)
       const relative = path.relative(root, absolute)
