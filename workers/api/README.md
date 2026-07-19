@@ -28,3 +28,13 @@ npx wrangler deploy `
 ```
 
 The public health endpoint is `GET https://pyro-wiki-api.luckyy.ccwu.cc/health`. Document and collaboration endpoints require a Feishu-backed Bearer access token. WebSocket clients authenticate during the Worker upgrade; tokens are not placed in query parameters.
+
+## Local API integration smoke
+
+From the repository root, run:
+
+```powershell
+npm run smoke:local-api
+```
+
+This starts the development Worker with local D1 persistence, applies migrations to an isolated `.wrangler/smoke-local` directory, and verifies document creation, pull, revision history, drafts, and stale-revision conflicts.
