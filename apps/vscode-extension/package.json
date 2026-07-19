@@ -25,7 +25,8 @@
     "onCommand:pyroWiki.joinCollaboration",
     "onCommand:pyroWiki.leaveCollaboration",
     "onView:pyroWiki.cloudDocuments",
-    "onView:pyroWiki.collaboration"
+    "onView:pyroWiki.collaboration",
+    "onUri"
   ],
   "main": "./dist/extension.js",
   "contributes": {

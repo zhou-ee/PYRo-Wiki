@@ -29,8 +29,9 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
 
   readonly onDidChange = this.changeEmitter.event
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor(private readonly context: vscode.ExtensionContext, private readonly output?: vscode.OutputChannel) {
     this.user = context.globalState.get<AuthUser>(USER_KEY)
+    this.log(`initialized; persisted user=${this.user?.name ?? 'none'}`)
     this.disposables.push(vscode.window.registerUriHandler({ handleUri: (uri) => { void this.handleUri(uri) } }))
   }
 
@@ -41,31 +42,38 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
     return vscode.workspace.getConfiguration('pyroWiki').get<string>('apiBaseUrl', DEFAULT_API_BASE_URL).replace(/\/$/, '')
   }
 
+  private log(message: string): void { this.output?.appendLine(`[${new Date().toISOString()}] ${message}`) }
+
   async initialize(): Promise<void> {
     this.refreshToken = await this.context.secrets.get(REFRESH_TOKEN_KEY)
+    this.log(`refresh token present=${Boolean(this.refreshToken)}`)
     if (this.refreshToken && !this.user) {
       try { await this.refresh() } catch { await this.clearSession(false) } }
   }
 
   async signIn(): Promise<void> {
+    this.log(`opening Feishu login at ${this.apiBaseUrl()}/auth/feishu/start`)
     await vscode.env.openExternal(vscode.Uri.parse(`${this.apiBaseUrl()}/auth/feishu/start`))
   }
 
   async handleUri(uri: vscode.Uri): Promise<void> {
-    if (uri.path !== '/auth/callback' && !uri.path.endsWith('/auth/callback')) return
+    this.log(`received URI authority=${uri.authority} path=${uri.path} queryKeys=${[...new URLSearchParams(uri.query).keys()].join(',')}`)
+    if (uri.path !== '/auth/callback' && !uri.path.endsWith('/auth/callback')) { this.log('ignored URI because callback path did not match'); return }
     const handoff = new URLSearchParams(uri.query).get('handoff')
-    if (!handoff) { void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
+    if (!handoff) { this.log('callback URI did not include handoff'); void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
     try {
       const response = await fetch(`${this.apiBaseUrl()}/auth/session/exchange`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handoff })
       })
+      this.log(`session exchange response=${response.status}`)
       const body = await response.json() as { accessToken?: string; refreshToken?: string; expiresIn?: number; user?: AuthUser; error?: string }
       if (!response.ok || !body.accessToken || !body.refreshToken || !body.user) throw new Error(body.error ?? `HTTP ${response.status}`)
       await this.applySession(body.accessToken, body.refreshToken, body.expiresIn ?? 900, body.user)
       void vscode.window.showInformationMessage(`Signed in to PYRo Wiki as ${body.user.name}.`)
     } catch (error) {
+      this.log(`login failed: ${error instanceof Error ? error.message : String(error)}`)
       void vscode.window.showErrorMessage(`PYRo Wiki Feishu login failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -84,12 +92,14 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
   private async refreshInternal(): Promise<string | undefined> {
     this.refreshToken ??= await this.context.secrets.get(REFRESH_TOKEN_KEY)
     if (!this.refreshToken) return undefined
+    this.log('refreshing access token')
     const response = await fetch(`${this.apiBaseUrl()}/auth/session/refresh`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ refreshToken: this.refreshToken })
     })
     const body = await response.json() as { accessToken?: string; refreshToken?: string; expiresIn?: number; user?: AuthUser; error?: string }
+    this.log(`refresh response=${response.status}`)
     if (!response.ok || !body.accessToken || !body.refreshToken || !body.user) {
       await this.clearSession(false)
       throw new Error(body.error ?? `HTTP ${response.status}`)
@@ -105,6 +115,7 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
     this.user = user
     await this.context.secrets.store(REFRESH_TOKEN_KEY, refreshToken)
     await this.context.globalState.update(USER_KEY, user)
+    this.log(`session applied for user=${user.name}`)
     this.changeEmitter.fire(user)
   }
 

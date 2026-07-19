@@ -15,13 +15,14 @@ import { AuthManager } from './auth/session'
 import { CloudDocumentsProvider } from './cloudWorkspace'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const auth = new AuthManager(context)
+  const authOutput = vscode.window.createOutputChannel('PYRo Wiki Auth')
+  const auth = new AuthManager(context, authOutput)
   await auth.initialize()
   const preview = new PreviewController(context)
   const collaboration = new CollaborationClient(auth)
   const collaborationProvider = new CollaborationProvider(collaboration)
   const cloudDocuments = new CloudDocumentsProvider(auth)
-  context.subscriptions.push(auth, preview, collaboration, collaborationProvider, cloudDocuments)
+  context.subscriptions.push(authOutput, auth, preview, collaboration, collaborationProvider, cloudDocuments)
 
   createRepositoryStatusItem(context)
   const authStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
