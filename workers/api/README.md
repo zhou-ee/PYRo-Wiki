@@ -18,3 +18,13 @@ https://pyro-wiki-api.luckyy.ccwu.cc/auth/feishu/callback
 ```
 
 The production database must be created and its ID inserted into the production Wrangler config before applying remote migrations.
+
+## Production deployment
+
+```powershell
+npx wrangler deploy `
+  --config .\infra\cloudflare\wrangler.api.prod.jsonc `
+  --domain pyro-wiki-api.luckyy.ccwu.cc
+```
+
+The public health endpoint is `GET https://pyro-wiki-api.luckyy.ccwu.cc/health`. Document and collaboration endpoints require a Feishu-backed Bearer access token. WebSocket clients authenticate during the Worker upgrade; tokens are not placed in query parameters.
