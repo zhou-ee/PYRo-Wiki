@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import { authenticateRequest, handleAuthRequest, isAuthResponse, type AuthEnv, type AuthUser } from './auth'
+import { decideRevisionWrite } from './testable'
 
 export interface Env extends AuthEnv {
   COLLABORATION_ROOM: DurableObjectNamespace
@@ -53,12 +54,13 @@ async function writeDocument(db: D1Database, workspace: string, documentPath: st
   await ensureDocument(db, workspace, documentPath)
   const current = await db.prepare('SELECT current_revision as revision FROM documents WHERE id=?').bind(idFor(workspace, documentPath)).first<{ revision: number }>()
   const revision = Number(current?.revision ?? 0)
-  if (baseRevision !== revision) {
+  const decision = decideRevisionWrite(revision, baseRevision)
+  if (decision.kind === 'conflict') {
     const remote = await readDocument(db, workspace, documentPath)
     const common = baseRevision > 0 ? await db.prepare(`SELECT content, revision, created_at as updatedAt FROM revisions WHERE document_id=? AND revision=?`).bind(idFor(workspace, documentPath), baseRevision).first<JsonRecord>() : null
     return json({ error: 'Document changed remotely', local: { content, revision: baseRevision }, remote, common }, 409)
   }
-  const next = revision + 1
+  const next = decision.nextRevision!
   const documentId = idFor(workspace, documentPath)
   const revisionId = crypto.randomUUID()
   await db.batch([
