@@ -13,6 +13,7 @@ export interface CollaborationSnapshot {
   documentPath?: string
   users: string[]
   error?: string
+  events: string[]
 }
 
 const HEARTBEAT_INTERVAL_MS = 20_000
@@ -32,9 +33,10 @@ export class CollaborationClient implements vscode.Disposable {
   private lastMessageAt = 0
   private intentionalClose = false
   private readonly users = new Map<string, string>()
+  private readonly events: string[] = []
   private readonly disposables: vscode.Disposable[] = []
   private readonly changeEmitter = new vscode.EventEmitter<CollaborationSnapshot>()
-  private snapshot: CollaborationSnapshot = { status: 'offline', users: [] }
+  private snapshot: CollaborationSnapshot = { status: 'offline', users: [], events: [] }
 
   readonly onDidChange = this.changeEmitter.event
 
@@ -56,6 +58,8 @@ export class CollaborationClient implements vscode.Disposable {
     this.intentionalClose = false
     this.reconnectAttempt = 0
     this.users.clear()
+    this.events.length = 0
+    this.recordEvent(`Joining ${document.fileName}`)
     this.ydoc.transact(() => {
       this.text.delete(0, this.text.length)
       this.text.insert(0, document.getText())
@@ -96,6 +100,7 @@ export class CollaborationClient implements vscode.Disposable {
         this.lastMessageAt = Date.now()
         this.startHeartbeat(socket)
         this.update({ status: 'connected', documentPath: decodedPath, users: this.userNames() })
+        this.recordEvent('Connected to collaboration room')
         this.send({ type: 'hello', state: encode(Y.encodeStateAsUpdate(this.ydoc)) })
         this.send({ type: 'awareness', status: 'online' })
       })
@@ -107,15 +112,25 @@ export class CollaborationClient implements vscode.Disposable {
         if (this.socket === socket) this.socket = undefined
         this.stopHeartbeat()
         if (generation !== this.connectionGeneration) return
-        if (!this.intentionalClose && this.document) this.scheduleReconnect()
-        else if (this.intentionalClose) this.update({ status: 'offline', users: [] })
+        if (!this.intentionalClose && this.document) {
+          this.recordEvent('Connection closed; scheduling reconnect')
+          this.scheduleReconnect()
+        } else if (this.intentionalClose) {
+          this.update({ status: 'offline', users: [] })
+          this.recordEvent('Left collaboration room')
+        }
       })
       socket.on('error', (error) => {
         if (generation !== this.connectionGeneration) return
         this.update({ status: 'error', documentPath: decodedPath, users: this.userNames(), error: error.message })
+        this.recordEvent(`Socket error: ${error.message}`, error.message)
       })
     }).catch((error) => {
-      if (generation === this.connectionGeneration && !this.intentionalClose) this.update({ status: 'error', documentPath: decodedPath, users: this.userNames(), error: error instanceof Error ? error.message : String(error) })
+      if (generation === this.connectionGeneration && !this.intentionalClose) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.update({ status: 'error', documentPath: decodedPath, users: this.userNames(), error: message })
+        this.recordEvent(`Authentication/connection error: ${message}`, message)
+      }
     })
   }
 
@@ -137,7 +152,9 @@ export class CollaborationClient implements vscode.Disposable {
     if (this.reconnectTimer || !this.document) return
     this.reconnectAttempt += 1
     const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt - 1, 5))
-    this.update({ status: 'reconnecting', documentPath: this.snapshot.documentPath, users: this.userNames(), error: `Retrying in ${Math.ceil(delay / 1000)}s` })
+    const retryMessage = `Retrying in ${Math.ceil(delay / 1000)}s`
+    this.update({ status: 'reconnecting', documentPath: this.snapshot.documentPath, users: this.userNames(), error: retryMessage })
+    this.recordEvent(`Reconnect scheduled (${Math.ceil(delay / 1000)}s)`, retryMessage)
     this.reconnectTimer = setTimeout(() => { this.reconnectTimer = undefined; this.connect() }, delay)
   }
 
@@ -153,6 +170,7 @@ export class CollaborationClient implements vscode.Disposable {
     this.document = undefined
     this.users.clear()
     this.update({ status: 'offline', users: [] })
+    this.recordEvent('Left collaboration room')
     if (showMessage) void vscode.window.showInformationMessage('Left PYRo Wiki collaboration.')
   }
 
@@ -167,6 +185,7 @@ export class CollaborationClient implements vscode.Disposable {
         this.applyingRemote = true
         try {
           Y.applyUpdate(this.ydoc, decode(message.update), 'remote')
+          this.recordEvent(message.type === 'sync' ? 'Received initial Yjs state' : 'Received remote Yjs update')
           if (this.document && this.document.getText() !== this.text.toString()) {
             const edit = new vscode.WorkspaceEdit()
             const endLine = Math.max(0, this.document.lineCount - 1)
@@ -178,14 +197,31 @@ export class CollaborationClient implements vscode.Disposable {
         }
       } else if (message.type === 'awareness' && message.user) {
         const presenceId = message.presenceId ?? message.userId ?? message.user
-        if (message.status === 'offline') this.users.delete(presenceId)
-        else this.users.set(presenceId, message.user)
-        this.update({ status: this.snapshot.status, documentPath: this.snapshot.documentPath, users: this.userNames(), error: this.snapshot.error })
-      } else if (message.type === 'error') this.update({ status: 'error', documentPath: this.snapshot.documentPath, users: this.userNames(), error: message.error ?? 'Collaboration server error' })
+        if (message.status === 'offline') {
+          this.users.delete(presenceId)
+          this.recordEvent(`${message.user} left the room`)
+        } else {
+          this.users.set(presenceId, message.user)
+          this.recordEvent(`${message.user} is online`)
+        }
+      } else if (message.type === 'error') {
+        const error = message.error ?? 'Collaboration server error'
+        this.update({ status: 'error', documentPath: this.snapshot.documentPath, users: this.userNames(), error })
+        this.recordEvent(`Server error: ${error}`, error)
+      }
     } catch { /* malformed peer messages are ignored */ }
   }
 
-  private update(next: CollaborationSnapshot): void { this.snapshot = next; this.changeEmitter.fire(next) }
+  private update(next: Omit<CollaborationSnapshot, 'events'>): void {
+    this.snapshot = { ...next, events: [...this.events] }
+    this.changeEmitter.fire(this.snapshot)
+  }
+
+  private recordEvent(message: string, error = this.snapshot.error): void {
+    this.events.unshift(`${new Date().toLocaleTimeString()} ${message}`)
+    this.events.splice(8)
+    this.update({ status: this.snapshot.status, documentPath: this.snapshot.documentPath, users: this.userNames(), error })
+  }
 
   dispose(): void {
     void this.leave(false)
