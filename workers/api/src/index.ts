@@ -174,7 +174,12 @@ export class CollaborationRoom {
     try { server.close(1011, 'socket error') } catch { /* already closed */ }
   }
 }
-function toBase64(value: Uint8Array): string { return btoa(String.fromCharCode(...value)) }
+function toBase64(value: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < value.length; offset += chunkSize) binary += String.fromCharCode(...value.subarray(offset, offset + chunkSize))
+  return btoa(binary)
+}
 function fromBase64(value: string): Uint8Array { return Uint8Array.from(atob(value), (character) => character.charCodeAt(0)) }
 
 export default {

@@ -100,6 +100,15 @@ async function main() {
     Y.applyUpdate(secondDoc, decode(update.update), 'smoke-remote')
     assert(secondDoc.getText('markdown').toString() === 'hello world', 'second client did not receive incremental update')
 
+    let largeUpdate
+    firstDoc.once('update', (next) => { largeUpdate = next })
+    firstDoc.getText('markdown').insert(firstDoc.getText('markdown').length, 'x'.repeat(100_000))
+    assert(largeUpdate instanceof Uint8Array && largeUpdate.byteLength > 65_536, 'large Yjs update was not generated')
+    first.socket.send(JSON.stringify({ type: 'update', update: encode(largeUpdate) }))
+    const largeMessage = await second.waitFor((message) => message.type === 'update' && message.update.length > 65_536)
+    Y.applyUpdate(secondDoc, decode(largeMessage.update), 'smoke-remote')
+    assert(secondDoc.getText('markdown').length === firstDoc.getText('markdown').length, 'second client did not receive large incremental update')
+
     first.socket.close()
     const offline = await second.waitFor((message) => message.type === 'awareness' && message.status === 'offline' && message.presenceId === firstPresence.presenceId)
     assert(offline.user === 'Development User', 'offline presence did not identify the disconnected client')
