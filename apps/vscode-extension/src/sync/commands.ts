@@ -4,6 +4,7 @@ import { ApiClient, ApiError, type ConflictResponse } from './api'
 import { enqueueSync, pendingSyncItems, removeSync } from './queue'
 import type { AuthManager } from '../auth/session'
 import { isWikiDocument, workspaceRoot } from '../workspace'
+import { mergeThreeWay } from './merge'
 
 const DEFAULT_API_BASE_URL = 'https://pyro-wiki-api.luckyy.ccwu.cc'
 
@@ -60,16 +61,42 @@ async function resolveConflict(context: vscode.ExtensionContext, document: vscod
     }
     return
   }
-  const localDoc = await vscode.workspace.openTextDocument({ content: conflict.local.content, language: 'markdown' })
-  const remoteDoc = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
-  if (common) {
-    const commonDoc = await vscode.workspace.openTextDocument({ content: common.content, language: 'markdown' })
-    await vscode.commands.executeCommand('vscode.diff', commonDoc.uri, localDoc.uri, `PYRo: common ? local (r${common.revision})`)
-    await vscode.commands.executeCommand('vscode.diff', commonDoc.uri, remoteDoc.uri, `PYRo: common ? remote (r${remote.revision})`)
-  } else {
-    await vscode.commands.executeCommand('vscode.diff', localDoc.uri, remoteDoc.uri, `PYRo: local / remote (r${remote.revision})`)
+  if (!common) {
+    const conflictChoice = await vscode.window.showWarningMessage('No common cloud ancestor is available. Apply explicit conflict markers to the local file for manual resolution?', { modal: true }, 'Apply conflict markers')
+    if (conflictChoice !== 'Apply conflict markers') return
+    await replaceDocument(document, mergeThreeWay('', conflict.local.content, remote.content ?? '').content)
+    await document.save()
+    void vscode.window.showWarningMessage(`Conflict markers were inserted into ${document.fileName}. Resolve them, then Push using cloud revision ${remote.revision} as the base.`)
+    return
   }
-  void vscode.window.showInformationMessage(`Manual merge ready. The cloud base is now revision ${remote.revision}; edit the local file and push again.`)
+
+  const merged = mergeThreeWay(common.content, conflict.local.content, remote.content ?? '')
+  if (merged.conflicts === 0) {
+    const mergeChoice = await vscode.window.showInformationMessage('The local and remote changes can be merged automatically.', 'Apply and push', 'Apply only', 'Cancel')
+    if (mergeChoice === 'Cancel' || !mergeChoice) return
+    await replaceDocument(document, merged.content)
+    await document.save()
+    await context.workspaceState.update(revisionKey(document), remote.revision)
+    if (mergeChoice === 'Apply only') {
+      void vscode.window.showInformationMessage(`Applied the merged content locally. Cloud revision ${remote.revision} is now the push base.`)
+      return
+    }
+    try {
+      const result = await client.putDocument(documentPath(document), merged.content, remote.revision)
+      await context.workspaceState.update(revisionKey(document), result.revision)
+      void vscode.window.showInformationMessage(`Merged and uploaded revision ${result.revision}.`)
+    } catch (error) {
+      void vscode.window.showWarningMessage(`The cloud document changed again; review the conflict once more. ${errorMessage(error)}`)
+    }
+    return
+  }
+
+  const conflictChoice = await vscode.window.showWarningMessage(`The three-way merge contains ${merged.conflicts} conflict${merged.conflicts === 1 ? '' : 's'}. Apply conflict markers to the local file?`, { modal: true }, 'Apply conflict markers')
+  if (conflictChoice !== 'Apply conflict markers') return
+  await replaceDocument(document, merged.content)
+  await document.save()
+  await context.workspaceState.update(revisionKey(document), remote.revision)
+  void vscode.window.showWarningMessage(`Applied ${merged.conflicts} conflict marker${merged.conflicts === 1 ? '' : 's'} to ${document.fileName}. Resolve them, then Push using cloud revision ${remote.revision} as the base.`)
 }
 
 export async function pushCurrent(context: vscode.ExtensionContext, auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
