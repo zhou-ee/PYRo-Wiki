@@ -87,6 +87,11 @@ async function main() {
 
     const documents = await request(`/documents?workspace=${workspace}`)
     assert(documents.response.status === 200 && documents.body.documents.length === 1, 'document listing should contain one document')
+
+    const malformedPath = await request(`/documents/%E0%A4%A?workspace=${workspace}`)
+    assert(malformedPath.response.status === 400, `malformed document path expected 400, got ${malformedPath.response.status}`)
+    const malformedCollaborationPath = await request(`/collaboration/%E0%A4%A?workspace=${workspace}`)
+    assert(malformedCollaborationPath.response.status === 400, `malformed collaboration path expected 400, got ${malformedCollaborationPath.response.status}`)
     console.log(`PYRo Wiki local API smoke passed: ${baseUrl}`)
   } finally {
     stop()

@@ -18,7 +18,11 @@ function json(body: JsonRecord, status = 200): Response {
 function error(message: string, status = 400): Response { return json({ error: message }, status) }
 function now(): string { return new Date().toISOString() }
 function idFor(workspace: string, path: string): string { return `${workspace}:${path}` }
-function normalizePath(value: string): string { return decodeURIComponent(value).replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/+/g, '/').replace(/(^|\/)\.\.(?=\/|$)/g, '').replace(/^\/+/, '').trim() }
+function normalizePath(value: string): string {
+  let decoded: string
+  try { decoded = decodeURIComponent(value) } catch { return '' }
+  return decoded.replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/+/g, '/').replace(/(^|\/)\.\.(?=\/|$)/g, '').replace(/^\/+/, '').trim()
+}
 function titleFor(path: string): string { return path.split('/').pop() || path }
 
 async function body<T extends JsonRecord>(request: Request): Promise<T> {
@@ -188,6 +192,7 @@ export default {
     }
     if (url.pathname.startsWith('/collaboration/')) {
       const documentPath = normalizePath(url.pathname.slice('/collaboration/'.length))
+      if (!documentPath) return error('Document path is required')
       const workspace = url.searchParams.get('workspace') || 'default'
       const id = env.COLLABORATION_ROOM.idFromName(idFor(workspace, documentPath))
       const forwarded = new Request(request, { headers: new Headers(request.headers) })
