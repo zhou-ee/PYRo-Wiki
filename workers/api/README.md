@@ -54,3 +54,9 @@ npm run smoke:local-auth
 ```
 
 It uses only fake local credentials and verifies one-time handoff exchange, `/me`, refresh-token rotation, logout, and session revocation.
+
+To verify the production D1 schema without printing document or user data:
+
+```powershell
+npm run check:production-d1
+```

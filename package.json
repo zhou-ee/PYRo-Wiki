@@ -14,6 +14,7 @@
     "smoke:production": "node scripts/smoke-production.mjs",
     "smoke:local-api": "node scripts/smoke-local-api.mjs",
     "smoke:local-collaboration": "node scripts/smoke-local-collaboration.mjs",
-    "smoke:local-auth": "node scripts/smoke-local-auth.mjs"
+    "smoke:local-auth": "node scripts/smoke-local-auth.mjs",
+    "check:production-d1": "node scripts/check-production-d1.mjs"
   }
 }
