@@ -80,13 +80,19 @@ async function main() {
     const oldMe = await request('/me', { headers: { authorization: `Bearer ${firstAccess}` } })
     assert(oldMe.response.status === 401, `rotated access token expected 401, got ${oldMe.response.status}`)
     const newMe = await request('/me', { headers: { authorization: `Bearer ${secondAccess}` } })
-    assert(newMe.response.status === 200, `rotated access token expected 200, got ${newMe.response.status}`)
+    assert(newMe.response.status === 200, 'rotated access token expected 200')
 
-    const logout = await request('/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${secondAccess}` } })
+    const concurrentRefresh = await Promise.all([1, 2].map(() => request('/auth/session/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: secondRefresh }) })))
+    const concurrentStatuses = concurrentRefresh.map(({ response }) => response.status).sort((left, right) => left - right)
+    assert(concurrentStatuses[0] === 200 && concurrentStatuses[1] === 401, `concurrent refresh expected one 200 and one 401, got ${concurrentStatuses.join(', ')}`)
+    const concurrentSuccess = concurrentRefresh.find(({ response }) => response.status === 200)
+    assert(concurrentSuccess?.body.accessToken && concurrentSuccess.body.refreshToken, 'concurrent refresh success response is incomplete')
+
+    const logout = await request('/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${concurrentSuccess.body.accessToken}` } })
     assert(logout.response.status === 200, `logout expected 200, got ${logout.response.status}`)
-    const afterLogout = await request('/me', { headers: { authorization: `Bearer ${secondAccess}` } })
+    const afterLogout = await request('/me', { headers: { authorization: `Bearer ${concurrentSuccess.body.accessToken}` } })
     assert(afterLogout.response.status === 401, `logged out access token expected 401, got ${afterLogout.response.status}`)
-    const revokedRefresh = await request('/auth/session/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: secondRefresh }) })
+    const revokedRefresh = await request('/auth/session/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: concurrentSuccess.body.refreshToken }) })
     assert(revokedRefresh.response.status === 401, `logged out refresh token expected 401, got ${revokedRefresh.response.status}`)
     console.log(`PYRo Wiki local auth smoke passed: ${baseUrl}`)
   } finally {
