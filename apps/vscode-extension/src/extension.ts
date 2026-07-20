@@ -5,7 +5,7 @@ import { PyroCompletionProvider } from './completion'
 import { loadMembers } from './preview/data'
 import { PreviewController } from './preview/controller'
 import { configuredWikiRoot, selectWikiRoot } from './workspace'
-import { pullCurrent, pushCurrent, retryQueued, saveDraftCurrent, viewCurrentRevisions } from './sync/commands'
+import { approveAndPublishRequest, pullCurrent, pushCurrent, rejectPublishRequest, retryPublishRequest, retryQueued, saveDraftCurrent, submitPublishRequestCurrent, viewCurrentRevisions, viewPublishRequests } from './sync/commands'
 import { CollaborationClient } from './collaboration/client'
 import { CollaborationProvider } from './collaboration/workspace'
 import { extendMarkdownIt as extendNativeMarkdownIt } from './preview/native'
@@ -117,6 +117,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('pyroWiki.retrySyncQueue', () => retrySyncQueue(false)),
     vscode.commands.registerCommand('pyroWiki.saveDraft', runDraft),
     vscode.commands.registerCommand('pyroWiki.viewRevisions', () => viewCurrentRevisions(auth)),
+    vscode.commands.registerCommand('pyroWiki.submitPublishRequest', () => submitPublishRequestCurrent(context, auth)),
+    vscode.commands.registerCommand('pyroWiki.viewPublishRequests', () => viewPublishRequests(auth)),
+    vscode.commands.registerCommand('pyroWiki.approveAndPublish', () => approveAndPublishRequest(auth)),
+    vscode.commands.registerCommand('pyroWiki.rejectPublishRequest', () => rejectPublishRequest(auth)),
+    vscode.commands.registerCommand('pyroWiki.retryPublishRequest', () => retryPublishRequest(auth)),
     vscode.commands.registerCommand('pyroWiki.resolveConflict', () => pushCurrent(context, auth)),
     vscode.commands.registerCommand('pyroWiki.joinCollaboration', () => collaboration.join()),
     vscode.commands.registerCommand('pyroWiki.leaveCollaboration', () => collaboration.leave()),

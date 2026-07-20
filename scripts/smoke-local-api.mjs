@@ -95,6 +95,16 @@ async function main() {
     const documents = await request(`/documents?workspace=${workspace}`)
     assert(documents.response.status === 200 && documents.body.documents.length === 1, 'document listing should contain one document')
 
+    const publish = await request('/publish-requests', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, documentPath: 'docs/intro.md', revision: 4 }) })
+    assert(publish.response.status === 201 && publish.body.request?.status === 'submitted', `publish request creation failed: ${JSON.stringify(publish.body)}`)
+    const publishId = publish.body.request.id
+    const listedPublish = await request(`/publish-requests?workspace=${workspace}`)
+    assert(listedPublish.response.status === 200 && listedPublish.body.requests.some((item) => item.id === publishId), 'publish request listing did not include the new request')
+    const approve = await request(`/publish-requests/${encodeURIComponent(publishId)}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'local smoke' }) })
+    assert(approve.response.status === 502, `unconfigured local GitHub App approve expected 502, got ${approve.response.status}: ${JSON.stringify(approve.body)}`)
+    const failedPublish = await request(`/publish-requests/${encodeURIComponent(publishId)}`)
+    assert(failedPublish.response.status === 200 && failedPublish.body.request.status === 'failed', 'failed publish request was not retained for retry')
+
     const malformedPath = await request(`/documents/%E0%A4%A?workspace=${workspace}`)
     assert(malformedPath.response.status === 400, `malformed document path expected 400, got ${malformedPath.response.status}`)
     const malformedCollaborationPath = await request(`/collaboration/%E0%A4%A?workspace=${workspace}`)

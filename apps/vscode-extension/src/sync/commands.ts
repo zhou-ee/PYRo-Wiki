@@ -219,3 +219,87 @@ export async function viewCurrentRevisions(auth: AuthManager, document = vscode.
     else void vscode.window.showErrorMessage(`Could not load cloud revisions: ${errorMessage(error)}`)
   }
 }
+
+function publishStatusLabel(status: string): string {
+  return ({ draft: '草稿', submitted: '等待审核', approved: '审核通过', publishing: '正在发布', published: '已发布到 GitHub', rejected: '已拒绝', conflict: '发布冲突', failed: '发布失败' } as Record<string, string>)[status] || status
+}
+
+export async function submitPublishRequestCurrent(context: vscode.ExtensionContext, auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('当前文档不在 PYRo Wiki 工作区内。')
+  const client = makeClient(document, auth)
+  if (!client) return
+  const revision = context.workspaceState.get<number>(revisionKey(document), 0)
+  if (!revision) return void vscode.window.showWarningMessage('请先使用“PYRo Wiki: Save Cloud Draft”保存云端草稿，再提交发布申请。')
+  try {
+    const result = await client.submitPublishRequest(documentPath(document), revision)
+    void vscode.window.showInformationMessage(`发布申请已提交：${documentPath(document)}，revision ${result.request.revision}，等待审核。`)
+  } catch (error) {
+    if ((error as { status?: number }).status === 401) void vscode.window.showWarningMessage('提交发布申请前请先使用飞书登录。')
+    else void vscode.window.showErrorMessage(`提交发布申请失败：${errorMessage(error)}`)
+  }
+}
+
+async function choosePublishRequest(client: ApiClient): Promise<import('./api').PublishRequest | undefined> {
+  const requests = (await client.publishRequests()).requests
+  if (!requests.length) { void vscode.window.showInformationMessage('当前没有发布申请。'); return undefined }
+  const picked = await vscode.window.showQuickPick(requests.map((request) => ({
+    label: `${publishStatusLabel(request.status)}  ${request.documentPath}`,
+    description: `revision ${request.revision} · ${request.updatedAt}`,
+    detail: request.errorMessage || request.reviewMessage || `base GitHub SHA: ${request.baseGithubSha}`,
+    request
+  })), { placeHolder: '选择一个发布申请' })
+  return picked?.request
+}
+
+export async function viewPublishRequests(auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('请先打开 PYRo Wiki 中的 Markdown 文档。')
+  const client = makeClient(document, auth)
+  if (!client) return
+  try { await choosePublishRequest(client) } catch (error) { void vscode.window.showErrorMessage(`读取发布申请失败：${errorMessage(error)}`) }
+}
+
+export async function approveAndPublishRequest(auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('请先打开 PYRo Wiki 中的 Markdown 文档。')
+  const client = makeClient(document, auth)
+  if (!client) return
+  try {
+    const request = await choosePublishRequest(client)
+    if (!request) return
+    const confirmation = await vscode.window.showWarningMessage(`确认批准并发布 ${request.documentPath} revision ${request.revision}？`, { modal: true }, 'Approve and Publish')
+    if (confirmation !== 'Approve and Publish') return
+    const message = await vscode.window.showInputBox({ prompt: '可选：填写审核意见或发布说明', ignoreFocusOut: true })
+    const result = await client.approvePublishRequest(request.id, message)
+    void vscode.window.showInformationMessage(`发布完成：${result.request.documentPath}，GitHub commit ${result.request.githubCommitSha || 'unknown'}。`)
+  } catch (error) {
+    const status = (error as { status?: number }).status
+    if (status === 403) void vscode.window.showWarningMessage('当前用户没有维护者发布权限。')
+    else if (status === 409) void vscode.window.showWarningMessage(`发布冲突：${errorMessage(error)}。请同步后重新提交。`)
+    else void vscode.window.showErrorMessage(`批准发布失败：${errorMessage(error)}`)
+  }
+}
+
+export async function rejectPublishRequest(auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('请先打开 PYRo Wiki 中的 Markdown 文档。')
+  const client = makeClient(document, auth)
+  if (!client) return
+  try {
+    const request = await choosePublishRequest(client)
+    if (!request) return
+    const message = await vscode.window.showInputBox({ prompt: `请输入拒绝 ${request.documentPath} 的原因`, ignoreFocusOut: true, validateInput: (value) => value.trim() ? undefined : '拒绝原因不能为空' })
+    if (message === undefined) return
+    await client.rejectPublishRequest(request.id, message)
+    void vscode.window.showInformationMessage('发布申请已拒绝。')
+  } catch (error) { void vscode.window.showErrorMessage(`拒绝发布申请失败：${errorMessage(error)}`) }
+}
+
+export async function retryPublishRequest(auth: AuthManager, document = vscode.window.activeTextEditor?.document): Promise<void> {
+  if (!document || !isWikiDocument(document)) return void vscode.window.showWarningMessage('请先打开 PYRo Wiki 中的 Markdown 文档。')
+  const client = makeClient(document, auth)
+  if (!client) return
+  try {
+    const request = await choosePublishRequest(client)
+    if (!request) return
+    const result = await client.retryPublishRequest(request.id)
+    void vscode.window.showInformationMessage(`发布申请已重新提交审核：${result.request.documentPath}。`)
+  } catch (error) { void vscode.window.showErrorMessage(`重试发布申请失败：${errorMessage(error)}`) }
+}

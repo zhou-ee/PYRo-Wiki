@@ -5,7 +5,7 @@ const root = resolve(process.cwd())
 const wrangler = resolve(root, 'workers/api/node_modules/wrangler/bin/wrangler.js')
 const config = 'infra/cloudflare/wrangler.api.prod.jsonc'
 const database = 'pyro-wiki-prod'
-const expectedTables = ['auth_handoff_codes', 'auth_sessions', 'authors', 'documents', 'oauth_states', 'revisions', 'users', 'workspaces']
+const expectedTables = ['auth_handoff_codes', 'auth_sessions', 'authors', 'documents', 'oauth_states', 'publish_requests', 'revisions', 'users', 'workspaces']
 const sql = `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${expectedTables.map((name) => `'${name}'`).join(', ')}) ORDER BY name;`
 
 function fail(message) { throw new Error(message) }

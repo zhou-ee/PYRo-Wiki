@@ -71,7 +71,7 @@ async function ensureVitePress(root: string): Promise<boolean> {
   }
 }
 
-async function syncSharedWiki(root: string, overwrite: boolean): Promise<{ created: number; replaced: number; skipped: number }> {
+async function syncSharedWiki(root: string, overwrite: boolean): Promise<Awaited<ReturnType<typeof pullSharedRepository>>> {
   return pullSharedRepository(root, apiBaseUrl(), overwrite)
 }
 
@@ -80,7 +80,7 @@ export async function pullSharedWiki(overwrite = false): Promise<void> {
   if (!root) return
   try {
     const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Syncing shared PYRo Wiki through Worker', cancellable: false }, async () => syncSharedWiki(root, overwrite))
-    void vscode.window.showInformationMessage(`Shared Wiki sync completed: ${result.created} created, ${result.replaced} replaced, ${result.skipped} kept.`)
+    void vscode.window.showInformationMessage(`Shared Wiki sync completed ? updated: ${result.created + result.replaced}, kept: ${result.kept + result.skipped}, remote deleted: ${result.deleted}, conflicts: ${result.conflicts.length}.`)
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not sync shared Wiki through Worker: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -111,7 +111,7 @@ export async function initializeWikiWorkspace(): Promise<void> {
     const document = await vscode.workspace.openTextDocument(indexUri)
     await vscode.window.showTextDocument(document, { preview: false })
     const action = await vscode.window.showInformationMessage(
-      `Shared Wiki initialized: ${result.created} created, ${result.replaced} replaced, ${result.skipped} kept. ${vitePressReady ? 'VitePress is ready.' : 'Install dependencies before full preview.'}`,
+      `Shared Wiki initialized ? updated: ${result.created + result.replaced}, kept: ${result.kept + result.skipped}, remote deleted: ${result.deleted}, conflicts: ${result.conflicts.length}. ${vitePressReady ? 'VitePress is ready.' : 'Install dependencies before full preview.'}`,
       'Open Preview'
     )
     if (action === 'Open Preview' && vitePressReady) await vscode.commands.executeCommand('pyroWiki.openPreview')

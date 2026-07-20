@@ -37,7 +37,12 @@
     "onCommand:pyroWiki.retrySyncQueue",
     "onCommand:pyroWiki.pullCloudDocument",
     "onCommand:pyroWiki.pushCloudDocument",
-    "onCommand:pyroWiki.searchCloudDocuments"
+    "onCommand:pyroWiki.searchCloudDocuments",
+    "onCommand:pyroWiki.submitPublishRequest",
+    "onCommand:pyroWiki.viewPublishRequests",
+    "onCommand:pyroWiki.approveAndPublish",
+    "onCommand:pyroWiki.rejectPublishRequest",
+    "onCommand:pyroWiki.retryPublishRequest"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -181,6 +186,31 @@
         "command": "pyroWiki.searchCloudDocuments",
         "title": "PYRo Wiki: Search Cloud Documents",
         "icon": "$(search)"
+      },
+      {
+        "command": "pyroWiki.submitPublishRequest",
+        "title": "PYRo Wiki: Submit Publish Request",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "pyroWiki.viewPublishRequests",
+        "title": "PYRo Wiki: View Publish Requests",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "pyroWiki.approveAndPublish",
+        "title": "PYRo Wiki: Approve and Publish",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "pyroWiki.rejectPublishRequest",
+        "title": "PYRo Wiki: Reject Publish Request",
+        "icon": "$(close)"
+      },
+      {
+        "command": "pyroWiki.retryPublishRequest",
+        "title": "PYRo Wiki: Retry Publish Request",
+        "icon": "$(sync)"
       }
     ],
     "configuration": {

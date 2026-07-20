@@ -1,18 +1,42 @@
+import * as crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
 const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 const MAX_NETWORK_ATTEMPTS = 3
+const STATE_DIRECTORY = '.pyro-wiki'
+const STATE_FILE = 'repository-state.json'
+
+export interface RepositoryMetadata {
+  repositoryUrl: string
+  branch: string
+  commitSha: string
+  commitUrl?: string
+  updatedAt?: string
+}
+
+export interface SharedRepositoryState {
+  repositoryUrl: string
+  branch: string
+  remoteCommitSha: string
+  files: Record<string, string>
+}
 
 export interface SharedRepositoryPullResult {
   created: number
   replaced: number
+  kept: number
   skipped: number
+  deleted: number
+  conflicts: string[]
+  unchanged: boolean
+  remoteCommitSha: string
   files: string[]
 }
 
 function sleep(milliseconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, milliseconds)) }
+function hash(content: Uint8Array): string { return crypto.createHash('sha256').update(content).digest('hex') }
 
 function safeRelativePath(value: string): string | undefined {
   const normalized = value.replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/+/g, '/')
@@ -59,16 +83,33 @@ function parseTarArchive(compressed: Uint8Array): Map<string, Uint8Array> {
   return files
 }
 
+async function requestJson<T>(apiBaseUrl: string, endpoint: string): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 20_000)
+    try {
+      const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}${endpoint}`, { headers: { accept: 'application/json' }, signal: controller.signal })
+      const body = await response.json().catch(() => ({})) as T & { error?: string }
+      if (!response.ok) throw new Error(body.error || `Worker repository metadata returned HTTP ${response.status}`)
+      return body
+    } catch (error) {
+      lastError = error
+      if (attempt < MAX_NETWORK_ATTEMPTS) await sleep(400 * 2 ** (attempt - 1))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Shared Wiki metadata request failed.')
+}
+
 async function downloadArchive(apiBaseUrl: string): Promise<Uint8Array> {
   let lastError: unknown
   for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 60_000)
     try {
-      const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/repository/archive`, {
-        headers: { accept: 'application/gzip' },
-        signal: controller.signal
-      })
+      const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/repository/archive`, { headers: { accept: 'application/gzip' }, signal: controller.signal })
       if (!response.ok) {
         const body = await response.text().catch(() => '')
         throw new Error(body || `Worker repository proxy returned HTTP ${response.status}`)
@@ -86,30 +127,129 @@ async function downloadArchive(apiBaseUrl: string): Promise<Uint8Array> {
   throw lastError instanceof Error ? lastError : new Error('Shared Wiki download failed.')
 }
 
+async function readState(root: string): Promise<SharedRepositoryState | undefined> {
+  try {
+    const value = JSON.parse(await fs.readFile(path.join(root, STATE_DIRECTORY, STATE_FILE), 'utf8')) as SharedRepositoryState
+    if (!value || typeof value.remoteCommitSha !== 'string' || !value.files || typeof value.files !== 'object') return undefined
+    return value
+  } catch {
+    return undefined
+  }
+}
+
+async function writeState(root: string, state: SharedRepositoryState): Promise<void> {
+  const directory = path.join(root, STATE_DIRECTORY)
+  await fs.mkdir(directory, { recursive: true })
+  const temporary = path.join(directory, `${STATE_FILE}.tmp`)
+  await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  await fs.rename(temporary, path.join(directory, STATE_FILE))
+  const exclude = path.join(root, '.git', 'info', 'exclude')
+  try {
+    const existing = await fs.readFile(exclude, 'utf8')
+    if (!existing.split(/\r?\n/).includes(`${STATE_DIRECTORY}/`)) await fs.appendFile(exclude, `${existing.endsWith('\n') ? '' : '\n'}${STATE_DIRECTORY}/\n`)
+  } catch { /* no local Git metadata */ }
+}
+
+async function readLocalHash(target: string): Promise<{ exists: boolean; hash?: string }> {
+  try { return { exists: true, hash: hash(await fs.readFile(target)) } } catch { return { exists: false } }
+}
+
+async function writeLocal(root: string, relativePath: string, content: Uint8Array): Promise<void> {
+  const target = path.resolve(root, relativePath)
+  const relativeTarget = path.relative(root, target)
+  if (relativeTarget.startsWith('..') || path.isAbsolute(relativeTarget)) throw new Error(`Unsafe shared Wiki path: ${relativePath}`)
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.writeFile(target, content)
+}
+
+export async function getRepositoryMetadata(apiBaseUrl: string): Promise<RepositoryMetadata> {
+  return requestJson<RepositoryMetadata>(apiBaseUrl, '/repository/metadata')
+}
+
 export async function pullSharedRepository(root: string, apiBaseUrl: string, overwrite = false): Promise<SharedRepositoryPullResult> {
+  const metadata = await getRepositoryMetadata(apiBaseUrl)
+  const previous = await readState(root)
+  if (previous && previous.remoteCommitSha === metadata.commitSha && !overwrite) {
+    return { created: 0, replaced: 0, kept: 0, skipped: 0, deleted: 0, conflicts: [], unchanged: true, remoteCommitSha: metadata.commitSha, files: [] }
+  }
   const archive = parseTarArchive(await downloadArchive(apiBaseUrl))
+  if (!archive.size) throw new Error('Shared Wiki archive contained no usable files.')
+  const previousFiles = previous?.files ?? {}
+  const nextFiles: Record<string, string> = { ...previousFiles }
+  const conflicts: string[] = []
+  const files: string[] = []
   let created = 0
   let replaced = 0
+  let kept = 0
   let skipped = 0
-  const files: string[] = []
+  let deleted = 0
+
   for (const [relativePath, content] of archive) {
+    const remoteHash = hash(content)
     const target = path.resolve(root, relativePath)
-    const relativeTarget = path.relative(root, target)
-    if (relativeTarget.startsWith('..') || path.isAbsolute(relativeTarget)) continue
-    let exists = true
-    try { await fs.access(target) } catch { exists = false }
-    if (exists && !overwrite) {
+    const local = await readLocalHash(target)
+    const previousHash = previousFiles[relativePath]
+    if (overwrite) {
+      await writeLocal(root, relativePath, content)
+      if (local.exists) replaced += 1
+      else created += 1
+      nextFiles[relativePath] = remoteHash
+      files.push(relativePath)
+      continue
+    }
+    if (!local.exists) {
+      await writeLocal(root, relativePath, content)
+      created += 1
+      nextFiles[relativePath] = remoteHash
+      files.push(relativePath)
+      continue
+    }
+    if (!previousHash) {
+      conflicts.push(`${relativePath} (local file has no sync baseline)`)
       skipped += 1
       continue
     }
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, content)
-    if (exists) replaced += 1
-    else created += 1
-    files.push(relativePath)
+    if (local.hash === previousHash && remoteHash !== previousHash) {
+      await writeLocal(root, relativePath, content)
+      replaced += 1
+      nextFiles[relativePath] = remoteHash
+      files.push(relativePath)
+    } else if (local.hash === previousHash && remoteHash === previousHash) {
+      skipped += 1
+    } else if (remoteHash === previousHash) {
+      kept += 1
+    } else {
+      conflicts.push(relativePath)
+      skipped += 1
+    }
   }
-  if (!files.length && !archive.size) throw new Error('Shared Wiki archive contained no usable files.')
-  return { created, replaced, skipped, files }
+
+  for (const [relativePath, previousHash] of Object.entries(previousFiles)) {
+    if (archive.has(relativePath)) continue
+    const local = await readLocalHash(path.resolve(root, relativePath))
+    if (!local.exists) {
+      delete nextFiles[relativePath]
+      continue
+    }
+    if (overwrite || local.hash === previousHash) {
+      await fs.rm(path.resolve(root, relativePath), { force: true })
+      delete nextFiles[relativePath]
+      deleted += 1
+      files.push(relativePath)
+    } else {
+      conflicts.push(`${relativePath} (remote deleted, local changed)`)
+      skipped += 1
+    }
+  }
+
+  const fullyApplied = conflicts.length === 0
+  await writeState(root, {
+    repositoryUrl: metadata.repositoryUrl,
+    branch: metadata.branch,
+    remoteCommitSha: fullyApplied ? metadata.commitSha : (previous?.remoteCommitSha ?? ''),
+    files: nextFiles
+  })
+  return { created, replaced, kept, skipped, deleted, conflicts, unchanged: false, remoteCommitSha: metadata.commitSha, files }
 }
 
 export { parseTarArchive, safeRelativePath }

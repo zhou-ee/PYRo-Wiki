@@ -27,6 +27,10 @@ async function main() {
   process.on('exit', stop)
   try {
     await waitForServer(child, logs)
+    const metadataResponse = await request('/repository/metadata')
+    if (metadataResponse.status !== 200) throw new Error(`repository metadata expected 200, got ${metadataResponse.status}: ${await metadataResponse.text()}`)
+    const metadata = await metadataResponse.json()
+    if (metadata.repositoryUrl !== 'https://github.com/zhou-ee/PYRo-Wiki' || metadata.branch !== 'main' || !/^[0-9a-f]{40}$/i.test(metadata.commitSha)) throw new Error('repository metadata did not include repository, branch and commit SHA')
     const response = await request('/repository/archive')
     if (response.status !== 200) throw new Error(`repository archive expected 200, got ${response.status}: ${await response.text()}`)
     const bytes = new Uint8Array(await response.arrayBuffer())

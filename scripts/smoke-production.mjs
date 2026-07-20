@@ -14,6 +14,11 @@ async function main() {
   assert(healthBody.authMode === 'feishu', `expected feishu auth mode, got ${healthBody.authMode}`)
   assert(health.headers.get('cache-control') === 'no-store', 'health response must not be cached')
 
+  const repositoryMetadata = await fetch(`${baseUrl}/repository/metadata`, noCompression)
+  assert(repositoryMetadata.status === 200, `repository metadata expected 200, got ${repositoryMetadata.status}`)
+  const metadata = await repositoryMetadata.json()
+  assert(metadata.repositoryUrl === 'https://github.com/zhou-ee/PYRo-Wiki' && metadata.branch === 'main' && /^[0-9a-f]{40}$/i.test(metadata.commitSha), 'repository metadata is incomplete')
+
   const repositoryArchive = await fetch(`${baseUrl}/repository/archive`, { headers: { accept: 'application/gzip' } })
   assert(repositoryArchive.status === 200, `repository archive expected 200, got ${repositoryArchive.status}`)
   assert((repositoryArchive.headers.get('content-type') ?? '').startsWith('application/gzip'), 'repository archive must be gzip')

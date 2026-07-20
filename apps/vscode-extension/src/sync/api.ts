@@ -16,6 +16,25 @@ export interface RemoteRevision {
   message?: string
 }
 
+export type PublishStatus = 'draft' | 'submitted' | 'approved' | 'publishing' | 'published' | 'rejected' | 'conflict' | 'failed'
+export interface PublishRequest {
+  id: string
+  workspaceId: string
+  documentPath: string
+  revision: number
+  baseGithubSha: string
+  requesterId: string
+  status: PublishStatus
+  reviewBy?: string
+  reviewMessage?: string
+  githubCommitSha?: string
+  errorMessage?: string
+  createdAt: string
+  updatedAt: string
+  submittedAt?: string
+  approvedAt?: string
+  publishedAt?: string
+}
 export interface ConflictResponse {
   local: { content: string; revision: number }
   remote: RemoteDocument
@@ -99,6 +118,20 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ workspace: this.workspaceId, baseRevision, message })
     })
+  }
+  publishRequests(): Promise<{ requests: PublishRequest[] }> { return this.request(`/publish-requests?workspace=${encodeURIComponent(this.workspaceId)}`) }
+  getPublishRequest(id: string): Promise<{ request: PublishRequest }> { return this.request(`/publish-requests/${encodeURIComponent(id)}`) }
+  submitPublishRequest(path: string, revision: number): Promise<{ request: PublishRequest }> {
+    return this.request('/publish-requests', { method: 'POST', body: JSON.stringify({ workspace: this.workspaceId, documentPath: path, revision }) })
+  }
+  approvePublishRequest(id: string, message?: string): Promise<{ request: PublishRequest }> {
+    return this.request(`/publish-requests/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({ message }) })
+  }
+  rejectPublishRequest(id: string, message: string): Promise<{ request: PublishRequest }> {
+    return this.request(`/publish-requests/${encodeURIComponent(id)}/reject`, { method: 'POST', body: JSON.stringify({ message }) })
+  }
+  retryPublishRequest(id: string): Promise<{ request: PublishRequest }> {
+    return this.request(`/publish-requests/${encodeURIComponent(id)}/retry`, { method: 'POST', body: JSON.stringify({}) })
   }
   authors(): Promise<{ authors: unknown[] }> { return this.request('/authors') }
 }

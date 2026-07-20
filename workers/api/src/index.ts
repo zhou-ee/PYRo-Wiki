@@ -1,7 +1,8 @@
 import * as Y from 'yjs'
 import { authenticateRequest, handleAuthRequest, isAuthResponse, type AuthEnv, type AuthUser } from './auth'
 import { decideRevisionWrite, isRevisionConstraintError } from './testable'
-import { fetchRepositoryArchive, type RepositoryEnv } from './repository'
+import { fetchRepositoryArchive, fetchRepositoryMetadata, type RepositoryEnv } from './repository'
+import { approveAndPublish, createPublishRequest, getPublishRequest, isPublisher, listPublishRequests, rejectPublishRequest, retryPublishRequest } from './publishRequests'
 
 export interface Env extends AuthEnv, RepositoryEnv {
   COLLABORATION_ROOM: DurableObjectNamespace
@@ -191,6 +192,9 @@ export default {
     if (url.pathname === '/repository/archive' && request.method === 'GET') {
       return fetchRepositoryArchive(env)
     }
+    if (url.pathname === '/repository/metadata' && request.method === 'GET') {
+      return fetchRepositoryMetadata(env)
+    }
     if (url.pathname === '/health') {
       try {
         await env.DB.prepare('SELECT 1 as ok').first<{ ok: number }>()
@@ -201,6 +205,40 @@ export default {
     }
     const authenticated = await authenticateRequest(request, env)
     if (isAuthResponse(authenticated)) return authenticated
+    if (url.pathname === '/publish-requests' && request.method === 'GET') {
+      const workspace = url.searchParams.get('workspace') || 'default'
+      return json({ requests: await listPublishRequests(env.DB, authenticated, env, workspace) })
+    }
+    if (url.pathname === '/publish-requests' && request.method === 'POST') {
+      try {
+        const input = await body<{ workspace?: string; documentPath?: string; revision?: number }>(request)
+        const workspace = input.workspace || url.searchParams.get('workspace') || 'default'
+        const documentPath = normalizePath(input.documentPath || '')
+        if (!documentPath || typeof input.revision !== 'number' || input.revision < 1) return error('documentPath and positive numeric revision are required')
+        return json({ request: await createPublishRequest(env.DB, env, authenticated, { workspace, documentPath, revision: input.revision }) }, 201)
+      } catch (cause) { return error(cause instanceof Error ? cause.message : 'Could not create publish request', 400) }
+    }
+    const publishMatch = url.pathname.match(/^\/publish-requests\/([^/]+)(?:\/(approve|reject|retry))?$/)
+    if (publishMatch) {
+      const requestId = decodeURIComponent(publishMatch[1])
+      const action = publishMatch[2]
+      const existing = await getPublishRequest(env.DB, requestId)
+      if (!existing) return error('Publish request not found', 404)
+      if (!isPublisher(env, authenticated) && existing.requesterId !== authenticated.id) return error('Publish request access denied', 403)
+      try {
+        if (request.method === 'GET' && !action) return json({ request: existing })
+        if (request.method !== 'POST' || !action) return error('Method not allowed', 405)
+        const input = await body<{ message?: string }>(request)
+        if (action === 'approve') return json({ request: await approveAndPublish(env.DB, env, authenticated, requestId, input.message) })
+        if (action === 'reject') return json({ request: await rejectPublishRequest(env.DB, env, authenticated, requestId, input.message || '') })
+        if (action === 'retry') return json({ request: await retryPublishRequest(env.DB, env, authenticated, requestId) })
+        return error('Unknown publish request action', 404)
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : 'Publish request operation failed'
+        const status = /permission required|access denied/i.test(message) ? 403 : /conflict|changed before/i.test(message) ? 409 : /not configured|GitHub API|GitHub App/i.test(message) ? 502 : 400
+        return error(message, status)
+      }
+    }
     if (url.pathname === '/authors' && request.method === 'GET') {
       const authors = await env.DB.prepare('SELECT id, name, avatar, title, description, links_json as links FROM authors ORDER BY name').all<JsonRecord>()
       return json({ authors: authors.results ?? [] })
