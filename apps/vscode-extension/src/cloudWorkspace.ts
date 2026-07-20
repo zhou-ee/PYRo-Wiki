@@ -118,8 +118,18 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
         await this.load()
         return
       }
-      const remote = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
-      await vscode.window.showTextDocument(remote, { preview: false })
+      const localUri = this.localUri(root, document.path)
+      let local: vscode.TextDocument
+      try {
+        local = await vscode.workspace.openTextDocument(localUri)
+      } catch {
+        const current = await this.client(root).getDocument(document.path)
+        await this.writeLocal(localUri, current.content ?? '')
+        await this.context.workspaceState.update(this.revisionKey(localUri), current.revision)
+        local = await vscode.workspace.openTextDocument(localUri)
+      }
+      const revisionDocument = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
+      await vscode.commands.executeCommand('vscode.diff', local.uri, revisionDocument.uri, `PYRo: ${document.path} revision ${picked.revision.revision}`)
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not load cloud revisions: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -151,8 +161,6 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
         return
       } catch { /* create a local copy below */ }
       const remote = await this.client(root).getDocument(document.path)
-      const choice = await vscode.window.showWarningMessage(`No local copy exists for ${document.path}. Create it inside the current PYRo Wiki workspace so preview, Pull, Push, and collaboration work correctly?`, 'Create local copy', 'Cancel')
-      if (choice !== 'Create local copy') return
       await this.writeLocal(localUri, remote.content ?? '')
       await this.context.workspaceState.update(this.revisionKey(localUri), remote.revision)
       const local = await vscode.workspace.openTextDocument(localUri)
