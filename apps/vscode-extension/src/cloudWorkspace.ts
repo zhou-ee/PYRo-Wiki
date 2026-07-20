@@ -18,6 +18,20 @@ export function workspaceIdForRoot(root: string): string {
   return path.basename(root).replace(/[^A-Za-z0-9_-]/g, '-').toLowerCase() || 'default'
 }
 
+const cloudContent = new Map<string, string>()
+const cloudContentProvider: vscode.TextDocumentContentProvider = {
+  provideTextDocumentContent(uri): string {
+    return cloudContent.get(uri.toString()) ?? ''
+  }
+}
+
+function cloudSnapshotUri(documentPath: string, revision: number, content: string): vscode.Uri {
+  const uri = vscode.Uri.parse(`pyro-cloud:/${encodeURIComponent(documentPath)}?revision=${revision}`)
+  cloudContent.set(uri.toString(), content)
+  while (cloudContent.size > 64) cloudContent.delete(cloudContent.keys().next().value as string)
+  return uri
+}
+
 export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode>, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<CloudNode | undefined | null | void>()
   private readonly disposables: vscode.Disposable[] = [this.emitter]
@@ -29,7 +43,10 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
   readonly onDidChangeTreeData = this.emitter.event
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly auth: AuthManager) {
-    this.disposables.push(auth.onDidChange(() => { this.documents = []; this.refresh() }))
+    this.disposables.push(
+      vscode.workspace.registerTextDocumentContentProvider('pyro-cloud', cloudContentProvider),
+      auth.onDidChange(() => { this.documents = []; this.refresh() })
+    )
   }
 
   getTreeItem(node: CloudNode): vscode.TreeItem {
@@ -119,17 +136,11 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
         return
       }
       const localUri = this.localUri(root, document.path)
-      let local: vscode.TextDocument
-      try {
-        local = await vscode.workspace.openTextDocument(localUri)
-      } catch {
-        const current = await this.client(root).getDocument(document.path)
-        await this.writeLocal(localUri, current.content ?? '')
-        await this.context.workspaceState.update(this.revisionKey(localUri), current.revision)
-        local = await vscode.workspace.openTextDocument(localUri)
-      }
-      const revisionDocument = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
-      await vscode.commands.executeCommand('vscode.diff', local.uri, revisionDocument.uri, `PYRo: ${document.path} revision ${picked.revision.revision}`)
+      let local: vscode.TextDocument | undefined
+      try { local = await vscode.workspace.openTextDocument(localUri) } catch { /* compare revision in read-only cloud view below */ }
+      const revisionDocument = await vscode.workspace.openTextDocument(cloudSnapshotUri(document.path, picked.revision.revision, picked.revision.content))
+      if (local) await vscode.commands.executeCommand('vscode.diff', local.uri, revisionDocument.uri, `PYRo: ${document.path} revision ${picked.revision.revision}`)
+      else await vscode.window.showTextDocument(revisionDocument, { preview: false })
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not load cloud revisions: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -142,8 +153,8 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
       const localUri = this.localUri(root, document.path)
       const local = await vscode.workspace.openTextDocument(localUri)
       const remote = await this.client(root).getDocument(document.path)
-      const remoteDoc = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
-      await vscode.commands.executeCommand('vscode.diff', local.uri, remoteDoc.uri, `PYRo: ${document.path} local / cloud`)
+      const remoteDoc = await vscode.workspace.openTextDocument(cloudSnapshotUri(document.path, remote.revision, remote.content ?? ''))
+      await vscode.commands.executeCommand('vscode.diff', local.uri, remoteDoc.uri, `PYRo: ${document.path} local ? cloud r${remote.revision}`)
     } catch (error) {
       if ((error as { code?: string }).code === 'FileNotFound') void vscode.window.showWarningMessage(`No local copy exists for ${document.path}. Use Open or Pull first.`)
       else void vscode.window.showErrorMessage(`Could not compare cloud document: ${error instanceof Error ? error.message : String(error)}`)

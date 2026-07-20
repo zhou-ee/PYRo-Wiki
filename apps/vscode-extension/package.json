@@ -2,7 +2,7 @@
   "name": "pyro-wiki-vscode-extension",
   "displayName": "PYRo Wiki",
   "description": "Safe Markdown preview, slash commands, cloud sync and collaboration for PYRo Wiki.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "pyro-wiki",
   "license": "MIT",
   "engines": {
@@ -373,7 +373,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "package": "npm run compile && vsce package --no-dependencies",
-    "install-local": "npm run package && code --install-extension pyro-wiki-vscode-extension-0.1.5.vsix --force"
+    "install-local": "npm run package && code --install-extension pyro-wiki-vscode-extension-0.1.6.vsix --force"
   },
   "dependencies": {
     "markdown-it": "^14.1.0",
