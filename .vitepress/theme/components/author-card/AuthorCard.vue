@@ -1,22 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import * as memberRegistry from '../../../public/member_list/members'
-
-type Member = {
-  id?: string
-  name: string
-  avatar?: string
-  title?: string
-  desc?: string
-  description?: string
-  links?: Array<{ icon?: string; link: string }>
-}
+import { memberInitials, resolveMember } from './registry'
 
 const props = defineProps<{ author: string }>()
-const members = memberRegistry as unknown as Record<string, Member>
-const member = computed(() => Object.values(members).find((candidate) => candidate.name === props.author || candidate.id === props.author))
+const member = computed(() => resolveMember(props.author))
 const avatarFailed = ref(false)
-const initials = computed(() => (member.value?.name ?? props.author).trim().slice(0, 2).toUpperCase())
+const initials = computed(() => memberInitials(props.author, member.value))
 watch(() => props.author, () => { avatarFailed.value = false })
 </script>
 
