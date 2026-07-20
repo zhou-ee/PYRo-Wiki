@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { parseVscodeCallback } from './callback'
 
 export interface AuthUser {
   id: string
@@ -66,11 +67,10 @@ export class AuthManager implements vscode.Disposable, AuthProvider {
 
   async handleUri(uri: vscode.Uri): Promise<void> {
     this.log(`received URI authority=${uri.authority} path=${uri.path} queryKeys=${[...new URLSearchParams(uri.query).keys()].join(',')}`)
-    if (uri.authority !== 'pyro-wiki.pyro-wiki-vscode-extension') { this.log('ignored URI because callback authority did not match'); return }
-    if (uri.path !== '/auth/callback' && !uri.path.endsWith('/auth/callback')) { this.log('ignored URI because callback path did not match'); return }
-    const handoff = new URLSearchParams(uri.query).get('handoff')
-    if (!handoff) { this.log('callback URI did not include handoff'); void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
-    await this.completeHandoff(handoff)
+    const callback = parseVscodeCallback(uri.authority, uri.path, uri.query)
+    if (callback.kind === 'ignore') { this.log(`ignored URI because callback ${callback.reason} did not match`); return }
+    if (callback.kind === 'missing-handoff') { this.log('callback URI did not include handoff'); void vscode.window.showErrorMessage('PYRo Wiki Feishu login returned no handoff code.'); return }
+    await this.completeHandoff(callback.value)
   }
 
   async completeHandoff(handoff: string): Promise<void> {
