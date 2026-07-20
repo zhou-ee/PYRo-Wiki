@@ -1,7 +1,8 @@
 import * as vscode from 'vscode'
 import * as path from 'node:path'
 
-export function workspaceRoot(document: vscode.TextDocument): string | undefined {
+export function workspaceRoot(document: vscode.TextDocument | undefined): string | undefined {
+  if (!document) return undefined
   return vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath
 }
 
