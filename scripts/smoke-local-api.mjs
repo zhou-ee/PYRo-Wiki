@@ -56,6 +56,13 @@ async function main() {
     assert(health.body.authMode === 'none', `expected none auth mode, got ${health.body.authMode}`)
 
     const workspace = 'integration-smoke'
+    const missingPath = encodeURIComponent('docs/missing.md')
+    const missingUrl = `/documents/${missingPath}?workspace=${workspace}`
+    const missingDocument = await request(missingUrl)
+    assert(missingDocument.response.status === 404, `missing document GET expected 404, got ${missingDocument.response.status}`)
+    const missingRevisions = await request(`/documents/${missingPath}/revisions?workspace=${workspace}`)
+    assert(missingRevisions.response.status === 404, `missing document revisions expected 404, got ${missingRevisions.response.status}`)
+
     const documentPath = encodeURIComponent('docs/intro.md')
     const documentUrl = `/documents/${documentPath}?workspace=${workspace}`
     const first = await request(documentUrl, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, content: '# v1', baseRevision: 0 }) })

@@ -43,7 +43,6 @@ async function ensureDocument(db: D1Database, workspace: string, documentPath: s
 }
 
 async function readDocument(db: D1Database, workspace: string, documentPath: string): Promise<JsonRecord> {
-  await ensureDocument(db, workspace, documentPath)
   const row = await db.prepare(`SELECT d.path, d.title, d.current_revision as revision, d.updated_at as updatedAt,
       COALESCE(r.content, '') as content
       FROM documents d LEFT JOIN revisions r ON r.document_id=d.id AND r.revision=d.current_revision
@@ -220,7 +219,8 @@ export default {
       const workspace = url.searchParams.get('workspace') || 'default'
       if (!documentPath) return error('Document path is required')
       if (request.method === 'GET' && isRevisions) {
-        await ensureDocument(env.DB, workspace, documentPath)
+        const document = await env.DB.prepare('SELECT id FROM documents WHERE id=?').bind(idFor(workspace, documentPath)).first<{ id: string }>()
+        if (!document) return error('Document not found', 404)
         const revisions = await env.DB.prepare('SELECT revision, content, kind, message, created_at as updatedAt FROM revisions WHERE document_id=? ORDER BY revision DESC').bind(idFor(workspace, documentPath)).all<JsonRecord>()
         return json({ revisions: revisions.results ?? [] })
       }
@@ -241,7 +241,10 @@ export default {
           return error(cause instanceof Error ? cause.message : 'Invalid request')
         }
       }
-      if (request.method === 'GET') return json(await readDocument(env.DB, workspace, documentPath))
+      if (request.method === 'GET') {
+        try { return json(await readDocument(env.DB, workspace, documentPath)) }
+        catch (cause) { if (cause instanceof Error && cause.message === 'Document not found') return error('Document not found', 404); throw cause }
+      }
       if (request.method === 'PUT' || (request.method === 'POST' && isDraft)) {
         let input: { workspace?: string; content?: string; baseRevision?: number; message?: string } | undefined
         let selectedWorkspace = workspace
