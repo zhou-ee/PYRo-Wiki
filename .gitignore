@@ -1,13 +1,7 @@
-node_modules
-dist
-cache
-.temp
-.DS_Store
-package-lock.json
+node_modules/
+.vitepress/dist/
+.vitepress/cache/
 public/recent-updates.json
-# PYRo Wiki development artifacts
-*.vsix
 *.log
-apps/vscode-extension/dist
-workers/api/dist
-.wrangler/
+*.vsix
+.DS_Store

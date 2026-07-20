@@ -1,4 +1,6 @@
 {
+  "name": "pyro-wiki-docs",
+  "private": true,
   "devDependencies": {
     "markdown-it-mathjax3": "^4.3.2",
     "vitepress": "^2.0.0-alpha.16"
@@ -7,15 +9,6 @@
     "recent-updates": "node .vitepress/scripts/recent-updates.mjs",
     "docs:dev": "npm run recent-updates && vitepress dev",
     "docs:build": "npm run recent-updates && vitepress build",
-    "docs:preview": "vitepress preview",
-    "typecheck": "npm --prefix apps/vscode-extension run typecheck && npm --prefix workers/api run typecheck",
-    "build": "npm run docs:build && npm --prefix apps/vscode-extension run compile && npm --prefix workers/api run build",
-    "test": "npm --prefix apps/vscode-extension run test && npm --prefix workers/api run test",
-    "smoke:production": "node scripts/smoke-production.mjs",
-    "smoke:local-api": "node scripts/smoke-local-api.mjs",
-    "smoke:local-collaboration": "node scripts/smoke-local-collaboration.mjs",
-    "smoke:local-auth": "node scripts/smoke-local-auth.mjs",
-    "check:production-d1": "node scripts/check-production-d1.mjs",
-    "smoke:local-repository": "node scripts/smoke-local-repository.mjs"
+    "docs:preview": "vitepress preview"
   }
 }
