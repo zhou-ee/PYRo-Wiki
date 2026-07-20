@@ -1,6 +1,6 @@
 // electronic
 export const mem1 = {
-  avatar: 'https://github.com/vod-x.png',
+  avatar: 'https://avatars.githubusercontent.com/u/225347511?v=4',
   name: '夏伍',
   title: 'QQ:2665574681',
   desc: '26赛季项目管理，25赛季英雄电控，24赛季英雄电控',
@@ -14,7 +14,7 @@ export const mem1 = {
 }
 
 export const mem2 = {
-  avatar: 'https://github.com/zhou-ee.png',
+  avatar: 'https://avatars.githubusercontent.com/u/189762220?v=4',
   name: 'Lucky',
   title: 'QQ:2585102045',
   desc: '26赛季英雄电控，25赛季英雄电控',
@@ -24,7 +24,7 @@ export const mem2 = {
 }
 
 export const mem3 =    {
-        avatar: 'https://github.com/MekCraftLi.png',
+        avatar: 'https://avatars.githubusercontent.com/u/147472465?v=4',
         name: 'MekCraftLi',
         title: 'QQ:2653603048',
         desc:'26赛季步兵电控，25赛季步兵电控，24赛季步兵电控',
@@ -34,7 +34,7 @@ export const mem3 =    {
     }
 
 export const mem4 = {
-  avatar: 'https://github.com/Pason666.png',
+  avatar: 'https://avatars.githubusercontent.com/u/206337653?v=4',
   name: 'Pason',
   title: 'QQ:110419260',
   desc: '26赛季哨兵电控，25赛季哨兵电控',
@@ -44,7 +44,7 @@ export const mem4 = {
 }
 
 export const mem5 = {
-        avatar: 'https://github.com/RenshengJi.png',
+        avatar: 'https://avatars.githubusercontent.com/u/111029865?v=4',
         name: '人生几何',
         title: '主页: renshengji.github.io',
         desc:'25赛季队长，24赛季视觉，23赛季视觉',
@@ -55,7 +55,7 @@ export const mem5 = {
 
 
 export const mem6 = {
-  avatar: 'https://github.com/wangonewen.png',
+  avatar: 'https://avatars.githubusercontent.com/u/78593546?v=4',
   name: '王艺文',
   title: 'QQ:1825686853',
   desc: '24赛季项目管理，23赛季大符视觉，22赛季步兵电控，21赛季英雄电控',
@@ -65,7 +65,7 @@ export const mem6 = {
 }
 
 export const mem7 = {
-    avatar: 'https://github.com/SARSfang.png',
+    avatar: 'https://avatars.githubusercontent.com/u/80186618?v=4',
     name: '方典',
     title: 'TEL/VX:18720066325',
     desc:'22-24赛季宣传经理',
@@ -77,7 +77,7 @@ export const mem7 = {
 }
 
 export const mem8 = {
-    avatar: 'https://github.com/cqwdyzm.png',
+    avatar: 'https://avatars.githubusercontent.com/u/164731914?v=4',
     name: '刘玉琪',
     title: 'QQ:1652713178 ; wx：cqwdyzm',
     desc:'24赛季运营，23赛季运营/电控，22赛季电控，21赛季电控梯队，',
@@ -87,7 +87,7 @@ export const mem8 = {
     ]
 }
 export const mem9 = {
-        avatar: 'https://github.com/YzmYalier.png',
+        avatar: 'https://avatars.githubusercontent.com/u/85996304?v=4',
         name: '杨泽鸣',
         title: 'QQ:2252283758',
         desc:'26赛季队长，25赛季视觉，24赛季视觉',

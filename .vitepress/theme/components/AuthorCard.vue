@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import * as memberRegistry from '../../../public/member_list/members'
 
 type Member = {
@@ -15,12 +15,15 @@ type Member = {
 const props = defineProps<{ author: string }>()
 const members = memberRegistry as unknown as Record<string, Member>
 const member = computed(() => Object.values(members).find((candidate) => candidate.name === props.author || candidate.id === props.author))
+const avatarFailed = ref(false)
+const initials = computed(() => (member.value?.name ?? props.author).trim().slice(0, 2).toUpperCase())
+watch(() => props.author, () => { avatarFailed.value = false })
 </script>
 
 <template>
   <article v-if="member" class="pyro-author-card">
-    <img v-if="member.avatar" class="pyro-author-avatar" :src="member.avatar" :alt="member.name" />
-    <div v-else class="pyro-author-avatar pyro-author-avatar-placeholder" />
+    <img v-if="member.avatar && !avatarFailed" class="pyro-author-avatar" :src="member.avatar" :alt="member.name" @error="avatarFailed = true" />
+    <div v-else class="pyro-author-avatar pyro-author-avatar-placeholder">{{ initials }}</div>
     <div class="pyro-author-body">
       <strong>{{ member.name }}</strong>
       <div v-if="member.title" class="pyro-author-title">{{ member.title }}</div>
@@ -46,15 +49,24 @@ const member = computed(() => Object.values(members).find((candidate) => candida
 }
 
 .pyro-author-avatar {
-  width: 56px;
-  height: 56px;
-  flex: 0 0 auto;
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  flex: 0 0 56px;
   border-radius: 50%;
   object-fit: cover;
   background: var(--vp-c-bg-mute);
 }
 
 .pyro-author-avatar-placeholder {
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
   background: linear-gradient(135deg, #42d392, #647eff);
 }
 
