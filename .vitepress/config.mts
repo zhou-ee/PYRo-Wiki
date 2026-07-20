@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  base: '/PYRo-Wiki/',
   title: "PYRo",
   description: "天津大学北洋机甲文档站",
   themeConfig: {
@@ -150,4 +151,3 @@ export default defineConfig({
 
 
   
-
