@@ -151,17 +151,8 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
         return
       } catch { /* create a local copy below */ }
       const remote = await this.client(root).getDocument(document.path)
-      const choice = await vscode.window.showQuickPick([
-        { label: 'Create local copy', value: 'create', description: `Write ${document.path} into the current workspace.` },
-        { label: 'Open temporary copy', value: 'temporary', description: 'Open without creating a workspace file.' },
-        { label: 'Cancel', value: 'cancel' }
-      ], { placeHolder: `No local copy exists for ${document.path}` })
-      if (!choice || choice.value === 'cancel') return
-      if (choice.value === 'temporary') {
-        const temporary = await vscode.workspace.openTextDocument({ content: remote.content ?? '', language: 'markdown' })
-        await vscode.window.showTextDocument(temporary, { preview: false })
-        return
-      }
+      const choice = await vscode.window.showWarningMessage(`No local copy exists for ${document.path}. Create it inside the current PYRo Wiki workspace so preview, Pull, Push, and collaboration work correctly?`, 'Create local copy', 'Cancel')
+      if (choice !== 'Create local copy') return
       await this.writeLocal(localUri, remote.content ?? '')
       await this.context.workspaceState.update(this.revisionKey(localUri), remote.revision)
       const local = await vscode.workspace.openTextDocument(localUri)

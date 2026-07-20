@@ -166,8 +166,19 @@ export async function pullCurrent(context: vscode.ExtensionContext, auth: AuthMa
     await context.workspaceState.update(revisionKey(document), remote.revision)
     void vscode.window.showInformationMessage(`Pulled revision ${remote.revision}.`)
   } catch (error) {
-    if ((error as { status?: number }).status === 401) void vscode.window.showWarningMessage('Sign in with Feishu before pulling a document.')
-    else if (isTransient(error)) void vscode.window.showWarningMessage('PYRo Wiki is temporarily unreachable. Try Pull again when the network is available.')
+    const status = (error as { status?: number }).status
+    if (status === 401) void vscode.window.showWarningMessage('Sign in with Feishu before pulling a document.')
+    else if (status === 404) {
+      const choice = await vscode.window.showWarningMessage(`Cloud document ${documentPath(document)} does not exist yet. Upload the current local content as a new cloud document?`, 'Push as new cloud document')
+      if (choice !== 'Push as new cloud document') return
+      try {
+        const result = await client.putDocument(documentPath(document), document.getText(), 0)
+        await context.workspaceState.update(revisionKey(document), result.revision)
+        void vscode.window.showInformationMessage(`Created cloud document ${documentPath(document)} at revision ${result.revision}.`)
+      } catch (pushError) {
+        void vscode.window.showErrorMessage(`Could not create cloud document: ${errorMessage(pushError)}`)
+      }
+    } else if (isTransient(error)) void vscode.window.showWarningMessage('PYRo Wiki is temporarily unreachable. Try Pull again when the network is available.')
     else void vscode.window.showErrorMessage(`PYRo Wiki pull failed: ${errorMessage(error)}`)
   }
 }
