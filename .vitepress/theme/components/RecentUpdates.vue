@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { withBase } from 'vitepress'
 
 interface RecentUpdateEntry {
   title: string
@@ -13,7 +14,7 @@ const recentData = ref<RecentUpdateEntry[]>([])
 
 onMounted(async () => {
   try {
-    const res = await fetch('/recent-updates.json')
+    const res = await fetch(withBase('/recent-updates.json'))
     if (res.ok) {
       recentData.value = await res.json()
     }
@@ -41,7 +42,7 @@ function formatDate(ts: number): string {
         <a
           v-for="item in recentData"
           :key="item.file"
-          :href="item.url"
+          :href="withBase(item.url)"
           class="recent-row"
         >
           <svg class="recent-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
