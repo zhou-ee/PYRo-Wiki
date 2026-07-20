@@ -34,6 +34,18 @@ async function main() {
   assert(authorize.searchParams.get('redirect_uri') === `${baseUrl}/auth/feishu/callback`, 'oauth redirect_uri does not match production callback')
   assert(authorize.searchParams.has('state'), 'oauth state is missing')
 
+  const invalidCallback = await fetch(`${baseUrl}/auth/feishu/callback?state=invalid-smoke-state&code=invalid-smoke-code`, noCompression)
+  assert(invalidCallback.status === 400, `invalid OAuth callback expected 400, got ${invalidCallback.status}`)
+  assert(invalidCallback.headers.get('cache-control') === 'no-store', 'invalid OAuth callback must not be cached')
+
+  const invalidExchange = await fetch(`${baseUrl}/auth/session/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handoff: 'invalid-smoke-handoff' }) })
+  assert(invalidExchange.status === 400, `invalid handoff exchange expected 400, got ${invalidExchange.status}`)
+  assert(invalidExchange.headers.get('cache-control') === 'no-store', 'invalid handoff response must not be cached')
+
+  const invalidRefresh = await fetch(`${baseUrl}/auth/session/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: 'invalid-smoke-refresh' }) })
+  assert(invalidRefresh.status === 401, `invalid refresh expected 401, got ${invalidRefresh.status}`)
+  assert(invalidRefresh.headers.get('cache-control') === 'no-store', 'invalid refresh response must not be cached')
+
   console.log(`PYRo Wiki production smoke passed: ${baseUrl}`)
 }
 

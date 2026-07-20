@@ -62,3 +62,25 @@ npm run check:production-d1
 ```
 
 Authentication housekeeping prunes expired OAuth states, handoff codes, and revoked/expired sessions during authentication flows. Production internal-tenant mode also requires a Feishu tenant key.
+
+
+## Production route summary
+
+| Route | Purpose | Authentication |
+| --- | --- | --- |
+| `GET /health` | Worker and D1 readiness check | Public |
+| `GET /auth/feishu/start` | Start Feishu OAuth | Public |
+| `GET /auth/feishu/callback` | Validate OAuth state and create one-time handoff | Feishu callback |
+| `POST /auth/session/exchange` | Exchange handoff for access/refresh tokens | Handoff code |
+| `POST /auth/session/refresh` | Atomically rotate a refresh session | Refresh token |
+| `POST /auth/logout` | Revoke the current access session | Bearer access token |
+| `GET /me` | Return the authenticated Feishu user | Bearer access token |
+| `GET /documents` | List cloud documents | Bearer access token |
+| `GET /documents/{path}` | Pull one cloud document | Bearer access token |
+| `PUT /documents/{path}` | Publish a new revision | Bearer access token |
+| `POST /documents/{path}/drafts` | Save a draft revision | Bearer access token |
+| `GET /documents/{path}/revisions` | List revision history | Bearer access token |
+| `POST /documents/{path}/revisions/{revision}/restore` | Restore a historical revision as a new revision | Bearer access token |
+| `GET /collaboration/{path}` | Upgrade to authenticated Yjs WebSocket | Bearer access token in upgrade headers |
+
+The VS Code callback URI is `vscode://pyro-wiki.pyro-wiki-vscode-extension/auth/callback`. The production Feishu callback configured in the Feishu developer console must remain `https://pyro-wiki-api.luckyy.ccwu.cc/auth/feishu/callback`.
