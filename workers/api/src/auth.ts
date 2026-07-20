@@ -33,6 +33,7 @@ const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60
 const HANDOFF_TTL_SECONDS = 2 * 60
 const STATE_TTL_SECONDS = 10 * 60
 const VSCODE_CALLBACK = 'vscode://pyro-wiki.pyro-wiki-vscode-extension/auth/callback'
+const AUTH_CLEANUP_RETENTION_SECONDS = 24 * 60 * 60
 const FEISHU_AUTHORIZE_URL = 'https://open.feishu.cn/open-apis/authen/v1/authorize'
 const FEISHU_ACCESS_TOKEN_URL = 'https://open.feishu.cn/open-apis/authen/v1/access_token'
 const FEISHU_USER_INFO_URL = 'https://open.feishu.cn/open-apis/authen/v1/user_info'
@@ -69,6 +70,16 @@ function handoffPage(returnUrl: string, handoff: string): Response {
 function nowSeconds(): number { return Math.floor(Date.now() / 1000) }
 function isoAfter(seconds: number): string { return new Date(Date.now() + seconds * 1000).toISOString() }
 function isExpired(value: string): boolean { return Date.parse(value) <= Date.now() }
+
+async function purgeExpiredAuthData(env: AuthEnv): Promise<void> {
+  const current = new Date().toISOString()
+  const retention = new Date(Date.now() - AUTH_CLEANUP_RETENTION_SECONDS * 1000).toISOString()
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM oauth_states WHERE expires_at <= ?').bind(current),
+    env.DB.prepare('DELETE FROM auth_handoff_codes WHERE expires_at <= ? OR used_at <= ?').bind(current, retention),
+    env.DB.prepare('DELETE FROM auth_sessions WHERE expires_at <= ? OR revoked_at <= ?').bind(current, retention)
+  ])
+}
 
 function base64Url(value: Uint8Array): string {
   let binary = ''
@@ -170,6 +181,7 @@ async function exchangeFeishuCode(env: AuthEnv, code: string): Promise<{ openId:
   const tenantKey = userData.tenant_key ? String(userData.tenant_key) : tokenData.tenant_key ? String(tokenData.tenant_key) : undefined
   if (!openId || !name) throw new Error('Feishu did not return a usable user identity')
   if (env.FEISHU_TENANT_KEY && tenantKey !== env.FEISHU_TENANT_KEY) throw new Error('The Feishu user is outside the configured tenant')
+  if (env.FEISHU_TENANT_RESTRICTION === 'internal' && !tenantKey) throw new Error('Feishu did not return an internal tenant identity')
   return { openId, unionId: userData.union_id ? String(userData.union_id) : undefined, tenantKey, name, avatar: userData.avatar_url ? String(userData.avatar_url) : undefined }
 }
 
@@ -187,6 +199,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
   if (url.pathname === '/auth/feishu/start' && request.method === 'GET') {
     if (authMode(env) !== 'feishu') return errorJson('Feishu authentication is disabled', 503)
     if (!env.FEISHU_APP_ID || !env.FEISHU_APP_SECRET) return errorJson('Feishu application is not configured', 503)
+    await purgeExpiredAuthData(env)
     const state = randomToken()
     await env.DB.prepare('INSERT INTO oauth_states (state_hash, redirect_uri, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(await sha256(state), callbackUrl(env), isoAfter(STATE_TTL_SECONDS), new Date().toISOString()).run()
     const authorize = new URL(FEISHU_AUTHORIZE_URL)
@@ -221,6 +234,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
   }
   if (url.pathname === '/auth/session/exchange' && request.method === 'POST') {
     try {
+      await purgeExpiredAuthData(env)
       const input = await request.json() as { handoff?: string }
       if (!input.handoff) return errorJson('handoff is required', 400)
       const handoffHash = await sha256(input.handoff)
@@ -235,6 +249,7 @@ export async function handleAuthRequest(request: Request, env: AuthEnv): Promise
   }
   if (url.pathname === '/auth/session/refresh' && request.method === 'POST') {
     try {
+      await purgeExpiredAuthData(env)
       const input = await request.json() as { refreshToken?: string }
       if (!input.refreshToken) return errorJson('refreshToken is required', 400)
       const hash = await sha256(input.refreshToken)

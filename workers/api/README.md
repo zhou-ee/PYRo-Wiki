@@ -60,3 +60,5 @@ To verify the production D1 schema without printing document or user data:
 ```powershell
 npm run check:production-d1
 ```
+
+Authentication housekeeping prunes expired OAuth states, handoff codes, and revoked/expired sessions during authentication flows. Production internal-tenant mode also requires a Feishu tenant key.
