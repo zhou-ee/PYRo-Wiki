@@ -27,7 +27,7 @@ npx wrangler deploy `
   --domain pyro-wiki-api.luckyy.ccwu.cc
 ```
 
-The public health endpoint is `GET https://pyro-wiki-api.luckyy.ccwu.cc/health`. Document and collaboration endpoints require a Feishu-backed Bearer access token. WebSocket clients authenticate during the Worker upgrade; tokens are not placed in query parameters.
+The public health endpoint is `GET https://pyro-wiki-api.luckyy.ccwu.cc/health`; it returns `503` when the Worker cannot reach D1. Document and collaboration endpoints require a Feishu-backed Bearer access token. WebSocket clients authenticate during the Worker upgrade; tokens are not placed in query parameters.
 
 ## Local API integration smoke
 

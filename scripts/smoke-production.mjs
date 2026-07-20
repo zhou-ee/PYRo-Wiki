@@ -9,7 +9,7 @@ async function main() {
   const health = await fetch(`${baseUrl}/health`, noCompression)
   assert(health.status === 200, `health expected 200, got ${health.status}`)
   const healthBody = await health.json()
-  assert(healthBody.ok === true, 'health response is not ok')
+  assert(healthBody.ok === true && healthBody.database === 'ok', 'health response is not ready')
   assert(healthBody.environment === 'production', `expected production environment, got ${healthBody.environment}`)
   assert(healthBody.authMode === 'feishu', `expected feishu auth mode, got ${healthBody.authMode}`)
   assert(health.headers.get('cache-control') === 'no-store', 'health response must not be cached')

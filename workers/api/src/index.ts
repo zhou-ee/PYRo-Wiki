@@ -187,7 +187,14 @@ export default {
     const authResponse = await handleAuthRequest(request, env)
     if (authResponse) return authResponse
     const url = new URL(request.url)
-    if (url.pathname === '/health') return json({ ok: true, environment: env.PYRO_ENVIRONMENT, authMode: env.PYRO_AUTH_MODE, time: now() })
+    if (url.pathname === '/health') {
+      try {
+        await env.DB.prepare('SELECT 1 as ok').first<{ ok: number }>()
+        return json({ ok: true, database: 'ok', environment: env.PYRO_ENVIRONMENT, authMode: env.PYRO_AUTH_MODE, time: now() })
+      } catch {
+        return json({ ok: false, database: 'unavailable', environment: env.PYRO_ENVIRONMENT, authMode: env.PYRO_AUTH_MODE, time: now() }, 503)
+      }
+    }
     const authenticated = await authenticateRequest(request, env)
     if (isAuthResponse(authenticated)) return authenticated
     if (url.pathname === '/authors' && request.method === 'GET') {
