@@ -97,10 +97,27 @@ export class CloudDocumentsProvider implements vscode.TreeDataProvider<CloudNode
       if (!revisions.length) return void vscode.window.showInformationMessage('This cloud document has no revisions yet.')
       const picked = await vscode.window.showQuickPick(revisions.map((revision) => ({
         label: `Revision ${revision.revision}`,
-        description: revision.updatedAt,
+        description: `${revision.kind ?? 'published'} - ${revision.updatedAt}${revision.message ? ` - ${revision.message}` : ''}`,
         revision
       })), { placeHolder: `Select a revision of ${document.path}` })
       if (!picked) return
+      const action = await vscode.window.showQuickPick([
+        { label: 'Compare with current document', value: 'compare' },
+        { label: 'Restore this revision to the cloud', value: 'restore' },
+        { label: 'Cancel', value: 'cancel' }
+      ], { placeHolder: `Action for revision ${picked.revision.revision}` })
+      if (!action || action.value === 'cancel') return
+      if (action.value === 'restore') {
+        const current = await this.client(root).getDocument(document.path)
+        const confirmation = await vscode.window.showWarningMessage(`Restore cloud revision ${picked.revision.revision} as a new revision?`, { modal: true }, 'Restore')
+        if (confirmation !== 'Restore') return
+        const restored = await this.client(root).restoreRevision(document.path, picked.revision.revision, current.revision)
+        const localUri = this.localUri(root, document.path)
+        await this.context.workspaceState.update(this.revisionKey(localUri), restored.revision)
+        void vscode.window.showInformationMessage(`Restored revision ${picked.revision.revision} as cloud revision ${restored.revision}.`)
+        await this.load()
+        return
+      }
       const remote = await vscode.workspace.openTextDocument({ content: picked.revision.content, language: 'markdown' })
       await vscode.window.showTextDocument(remote, { preview: false })
     } catch (error) {

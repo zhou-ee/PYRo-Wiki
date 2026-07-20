@@ -201,16 +201,35 @@ export default {
     }
     if (url.pathname.startsWith('/documents/')) {
       const suffix = url.pathname.slice('/documents/'.length)
+      const restoreMatch = suffix.match(/^(.*)\/revisions\/([1-9]\d*)\/restore$/)
+      const isRestore = Boolean(restoreMatch)
       const isDraft = suffix.endsWith('/drafts')
       const isRevisions = suffix.endsWith('/revisions')
-      const rawPath = isDraft || isRevisions ? suffix.slice(0, suffix.lastIndexOf('/')) : suffix
+      const rawPath = isRestore ? restoreMatch![1] : isDraft || isRevisions ? suffix.slice(0, suffix.lastIndexOf('/')) : suffix
       const documentPath = normalizePath(rawPath)
       const workspace = url.searchParams.get('workspace') || 'default'
       if (!documentPath) return error('Document path is required')
       if (request.method === 'GET' && isRevisions) {
         await ensureDocument(env.DB, workspace, documentPath)
-        const revisions = await env.DB.prepare('SELECT revision, content, created_at as updatedAt FROM revisions WHERE document_id=? ORDER BY revision DESC').bind(idFor(workspace, documentPath)).all<JsonRecord>()
+        const revisions = await env.DB.prepare('SELECT revision, content, kind, message, created_at as updatedAt FROM revisions WHERE document_id=? ORDER BY revision DESC').bind(idFor(workspace, documentPath)).all<JsonRecord>()
         return json({ revisions: revisions.results ?? [] })
+      }
+      if (request.method === 'POST' && isRestore) {
+        let input: { workspace?: string; baseRevision?: number; message?: string } | undefined
+        let selectedWorkspace = workspace
+        try {
+          input = await body<{ workspace?: string; baseRevision?: number; message?: string }>(request)
+          selectedWorkspace = input.workspace || workspace
+          if (typeof input.baseRevision !== 'number') return error('numeric baseRevision is required')
+          const historicalRevision = Number(restoreMatch![2])
+          const historical = await env.DB.prepare('SELECT content FROM revisions WHERE document_id=? AND revision=?').bind(idFor(selectedWorkspace, documentPath), historicalRevision).first<{ content: string }>()
+          if (!historical) return error('Revision not found', 404)
+          const result = await writeDocument(env.DB, selectedWorkspace, documentPath, historical.content, input.baseRevision, 'published', authenticated.id, input.message ?? `Restored revision ${historicalRevision}`)
+          return result instanceof Response ? result : json(result)
+        } catch (cause) {
+          if (isRevisionConstraintError(cause)) return revisionConflict(env.DB, selectedWorkspace, documentPath, '', input?.baseRevision ?? 0)
+          return error(cause instanceof Error ? cause.message : 'Invalid request')
+        }
       }
       if (request.method === 'GET') return json(await readDocument(env.DB, workspace, documentPath))
       if (request.method === 'PUT' || (request.method === 'POST' && isDraft)) {

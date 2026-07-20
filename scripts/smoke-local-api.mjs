@@ -79,8 +79,11 @@ async function main() {
     const draft = await request(`/documents/${documentPath}/drafts?workspace=${workspace}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, content: '# draft', baseRevision: 2 }) })
     assert(draft.response.status === 200 && draft.body.revision === 3, 'draft did not create revision 3')
 
+    const restored = await request(`/documents/${documentPath}/revisions/1/restore?workspace=${workspace}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace, baseRevision: 3 }) })
+    assert(restored.response.status === 200 && restored.body.revision === 4 && restored.body.content === '# v1', 'revision restore did not create a new published revision')
+
     const revisions = await request(`/documents/${documentPath}/revisions?workspace=${workspace}`)
-    assert(revisions.response.status === 200 && revisions.body.revisions.length === 3, 'revision history should contain three revisions')
+    assert(revisions.response.status === 200 && revisions.body.revisions.length === 4, 'revision history should contain four revisions after restore')
 
     const documents = await request(`/documents?workspace=${workspace}`)
     assert(documents.response.status === 200 && documents.body.documents.length === 1, 'document listing should contain one document')

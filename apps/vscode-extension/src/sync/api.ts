@@ -12,6 +12,8 @@ export interface RemoteRevision {
   revision: number
   content: string
   updatedAt: string
+  kind?: 'published' | 'draft'
+  message?: string
 }
 
 export interface ConflictResponse {
@@ -92,5 +94,11 @@ export class ApiClient {
     return this.request(`/documents/${encodeURIComponent(path)}/drafts`, { method: 'POST', body: JSON.stringify({ workspace: this.workspaceId, content, baseRevision }) })
   }
   revisions(path: string): Promise<{ revisions: RemoteRevision[] }> { return this.request(`/documents/${encodeURIComponent(path)}/revisions?workspace=${encodeURIComponent(this.workspaceId)}`) }
+  restoreRevision(path: string, revision: number, baseRevision: number, message?: string): Promise<RemoteDocument> {
+    return this.request(`/documents/${encodeURIComponent(path)}/revisions/${revision}/restore?workspace=${encodeURIComponent(this.workspaceId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ workspace: this.workspaceId, baseRevision, message })
+    })
+  }
   authors(): Promise<{ authors: unknown[] }> { return this.request('/authors') }
 }
