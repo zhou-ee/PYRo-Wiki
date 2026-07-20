@@ -14,6 +14,12 @@ async function main() {
   assert(healthBody.authMode === 'feishu', `expected feishu auth mode, got ${healthBody.authMode}`)
   assert(health.headers.get('cache-control') === 'no-store', 'health response must not be cached')
 
+  const repositoryArchive = await fetch(`${baseUrl}/repository/archive`, { headers: { accept: 'application/gzip' } })
+  assert(repositoryArchive.status === 200, `repository archive expected 200, got ${repositoryArchive.status}`)
+  assert((repositoryArchive.headers.get('content-type') ?? '').startsWith('application/gzip'), 'repository archive must be gzip')
+  assert(repositoryArchive.headers.get('x-pyro-repository-ref') === 'main', 'repository archive ref must be main')
+  await repositoryArchive.arrayBuffer()
+
   const documents = await fetch(`${baseUrl}/documents?workspace=smoke-test`)
   assert(documents.status === 401, `unauthenticated documents expected 401, got ${documents.status}`)
 

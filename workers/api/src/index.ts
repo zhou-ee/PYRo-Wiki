@@ -1,8 +1,9 @@
 import * as Y from 'yjs'
 import { authenticateRequest, handleAuthRequest, isAuthResponse, type AuthEnv, type AuthUser } from './auth'
 import { decideRevisionWrite, isRevisionConstraintError } from './testable'
+import { fetchRepositoryArchive, type RepositoryEnv } from './repository'
 
-export interface Env extends AuthEnv {
+export interface Env extends AuthEnv, RepositoryEnv {
   COLLABORATION_ROOM: DurableObjectNamespace
 }
 
@@ -187,6 +188,9 @@ export default {
     const authResponse = await handleAuthRequest(request, env)
     if (authResponse) return authResponse
     const url = new URL(request.url)
+    if (url.pathname === '/repository/archive' && request.method === 'GET') {
+      return fetchRepositoryArchive(env)
+    }
     if (url.pathname === '/health') {
       try {
         await env.DB.prepare('SELECT 1 as ok').first<{ ok: number }>()

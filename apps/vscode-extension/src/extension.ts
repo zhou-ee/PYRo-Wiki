@@ -14,6 +14,7 @@ import { WikiDocumentsProvider, searchMarkdownDocuments } from './markdownWorksp
 import { AuthManager } from './auth/session'
 import { CloudDocumentsProvider } from './cloudWorkspace'
 import { pendingSyncCount } from './sync/queue'
+import { initializeWikiWorkspace, pullSharedWiki } from './initialize'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const authOutput = vscode.window.createOutputChannel('PYRo Wiki Auth')
@@ -87,6 +88,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const provider = new PyroCompletionProvider(getMembers)
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('pyroWiki.initializeWorkspace', initializeWikiWorkspace),
+    vscode.commands.registerCommand('pyroWiki.pullSharedWiki', () => pullSharedWiki(false)),
     vscode.commands.registerCommand('pyroWiki.selectWikiRoot', selectWikiRoot),
     vscode.commands.registerCommand('pyroWiki.openPreview', () => preview.open()),
     vscode.commands.registerCommand('pyroWiki.openSourceAndPreview', () => preview.open()),

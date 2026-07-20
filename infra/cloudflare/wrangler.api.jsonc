@@ -7,7 +7,9 @@
   "workers_dev": true,
   "vars": {
     "PYRO_AUTH_MODE": "none",
-    "PYRO_ENVIRONMENT": "development"
+    "PYRO_ENVIRONMENT": "development",
+    "PYRO_GITHUB_REPOSITORY_URL": "https://github.com/zhou-ee/PYRo-Wiki",
+    "PYRO_GITHUB_BRANCH": "main"
   },
   "d1_databases": [
     {

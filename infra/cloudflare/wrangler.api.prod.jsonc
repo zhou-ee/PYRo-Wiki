@@ -8,6 +8,8 @@
   "vars": {
     "PYRO_AUTH_MODE": "feishu",
     "PYRO_ENVIRONMENT": "production",
+    "PYRO_GITHUB_REPOSITORY_URL": "https://github.com/zhou-ee/PYRo-Wiki",
+    "PYRO_GITHUB_BRANCH": "main",
     "PYRO_AUTH_CALLBACK_URL": "https://pyro-wiki-api.luckyy.ccwu.cc/auth/feishu/callback",
     "FEISHU_TENANT_RESTRICTION": "internal"
   },

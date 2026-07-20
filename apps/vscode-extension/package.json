@@ -1,8 +1,8 @@
 {
   "name": "pyro-wiki-vscode-extension",
   "displayName": "PYRo Wiki",
-  "description": "Safe Markdown preview, slash commands, cloud sync and collaboration for PYRo Wiki.",
-  "version": "0.1.6",
+  "description": "Shared PYRo Wiki workspace, Worker-proxied repository sync, safe Markdown preview, cloud collaboration, and Feishu sync.",
+  "version": "0.1.7",
   "publisher": "pyro-wiki",
   "license": "MIT",
   "engines": {
@@ -14,6 +14,8 @@
   ],
   "activationEvents": [
     "onLanguage:markdown",
+    "onCommand:pyroWiki.initializeWorkspace",
+    "onCommand:pyroWiki.pullSharedWiki",
     "onCommand:pyroWiki.selectWikiRoot",
     "onCommand:pyroWiki.openPreview",
     "onCommand:pyroWiki.openMarkdownWorkspace",
@@ -44,6 +46,16 @@
         "command": "pyroWiki.selectWikiRoot",
         "title": "PYRo Wiki: Select Wiki Root",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "pyroWiki.initializeWorkspace",
+        "title": "PYRo Wiki: Initialize Wiki Workspace",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "pyroWiki.pullSharedWiki",
+        "title": "PYRo Wiki: Sync Shared Wiki through Worker",
+        "icon": "$(sync)"
       },
       {
         "command": "pyroWiki.openPreview",
@@ -373,7 +385,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "package": "npm run compile && vsce package --no-dependencies",
-    "install-local": "npm run package && code --install-extension pyro-wiki-vscode-extension-0.1.6.vsix --force"
+    "install-local": "npm run package && code --profile \"PYRo-Wiki\" --install-extension pyro-wiki-vscode-extension-0.1.7.vsix --force"
   },
   "dependencies": {
     "markdown-it": "^14.1.0",
