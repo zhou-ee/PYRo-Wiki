@@ -113,3 +113,5 @@ g_blinker.stop();
 3. **栈溢出**：虽然分阶段栈设计较省内存，但需确保 `loop_stack` 足够支撑主循环。
 
 ## Q&A
+
+<AuthorCard author="Lucky" />
