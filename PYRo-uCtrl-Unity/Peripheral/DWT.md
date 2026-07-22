@@ -121,3 +121,8 @@ void log_status()
 ### 4. 注意事项 (Caveats)
 
 1. **时间轴维护**: `get_timeline` 系列函数依赖于轮询来检测计数器溢出。如果您的程序长时间（超过 1 个溢出周期，例如 480MHz CPU 下约 8.94 秒）没有调用任何 `timeline` 相关接口，时间轴计算可能会丢失圈数。
+
+
+## Q&A
+
+<AuthorCard author="Lucky" />
