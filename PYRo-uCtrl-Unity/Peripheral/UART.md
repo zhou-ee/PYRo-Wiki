@@ -158,6 +158,3 @@ uart1.write(tx_buf, sizeof(tx_buf), 100);
 // 使用注册时传入的 ID 进行移除
 uart1.remove_rx_event_callback(reinterpret_cast<uint32_t>(this));
 ```
-
-## Q&AVersion<Badge type ="tip" text="1.0.0"/>  
-File<Badge type = "info" text="pyro_bsp_uart.h"/><Badge type = "info" text="pyro_bsp_uart.cpp"/><Badge type = "info" text="pyro_uart_drv.h"/><Badge type = "info" text="pyro_uart_drv.cpp"/>
